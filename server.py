@@ -18,14 +18,13 @@ def clienthandler():
     key = cPickle.loads(incoming)
     logging.info("Loaded serialized data from %s: %s", client, key)
     decrypted = ''
-    for keys in cKeyList:
-        logging.info("Generating new cipher with key %s", keys)
-        clientCiph = AES.new(keys)
-        logging.info("Generated new cipher for client.")
-        decrypted = decrypt(clientCiph, key[1])
-        if decrypted == str(key[0]):
-            logging.info("Decrypted text: %s", decrypted)
-            break
+    keyToUse = cKeyList[key[0] - 1]
+    logging.info("Generating new cipher with key %s", keyToUse)
+    clientCiph = AES.new(keyToUse)
+    logging.info("Generated new cipher for client.")
+    decrypted = decrypt(clientCiph, key[1])
+    if decrypted == str(key[0]):
+        logging.info("Decrypted text: %s", decrypted)
     if decrypted == '':
         logging.info("Unable to decrypt. Client rejected.")
         return False
