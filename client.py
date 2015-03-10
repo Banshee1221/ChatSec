@@ -22,7 +22,7 @@ class Client:
         self.run()
         logging.info("Running client startup\n================================")
 
-    def connect(self):
+    def srvConnect(self):
         """
         Handles connections to the server.
         :return: True
@@ -31,9 +31,10 @@ class Client:
         authVar = [self.UID, keyEnc]
         toSend = cPickle.dumps(authVar)
         self.soc.send(toSend)
+        self.srvReceive()
         return True
 
-    def receive(self):
+    def srvReceive(self):
         """
         Receives messages from the server and displays them.
         :return: True
@@ -41,7 +42,9 @@ class Client:
         while True:
             recv = self.soc.recv(1024)
             if recv != '':
-                print recv
+                logging.info("Received %s from server.", recv)
+                connList = eval(self.decrypt(recv))
+                logging.info("Decrypted content: %s", connList)
         return True
 
     def padder(self, message):
@@ -84,5 +87,4 @@ class Client:
         self.cipher = AES.new(self.sharedKey)
         logging.info("Established AES cipher.")
 
-        t1 = Thread(target=self.connect).start()
-        t2 = Thread(target=self.receive).start()
+        t1 = Thread(target=self.srvConnect).start()

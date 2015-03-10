@@ -29,22 +29,17 @@ def clienthandler():
     if decrypted == '':
         logging.info("Unable to decrypt. Client rejected.")
         return False
+    if decrypted not in connectedClients:
+        connectedClients.append(decrypted)
+    authEr(clientCiph, conn)
     return True
 
-def messagepasser(client, msg):
-    """
-    Passes messages from the server through to the clients where the message does not originate.
-    :param client: The specific client object that the message originates from
-    :param msg: The message that needs to be passed through to the other clients
-    :return: Boolean for successful or not
-    """
-    try:
-        for key in cKeyList:
-            if key != client:
-                key.sendall(msg)
-        return True
-    except:
-        return False
+def authEr(ciph, connection):
+    logging.info("Creating auth cert")
+    connList = encrypt(ciph, str(connectedClients))
+    logging.info("Encrypted connectedClients with master cipher %s\nSending to client", connList)
+    connection.send(connList)
+
 
 def padder(message):
     """
@@ -82,7 +77,7 @@ cipher = AES.new(masterKey)
 cKeyList = [b'\x19\x17\xe3\x34\x07\xc2\x83\x66\xc8\xe3\xb9\x75\xb1\x7e\x73\x74\x58\x93\x12\x67\x6b\x90\x22\x9a\xdb\x4c\xe6\xe5\x85\x52\xe2\x23',
             b'\x3f\x45\x51\x43\xe7\x5d\x1e\x7f\xd6\x59\xde\xa5\x70\x23\x49\x6d\xa3\xbd\x9f\x2f\x89\x08\xd1\xe2\xac\x32\x64\x1c\xd8\x19\xd3\xe3', "o'H3}f23U>eQC1[WdrB90#wajZ@;DSc7"]
 
-connectedClients = 0
+connectedClients = []
 
 print "Initialising Server"
 soc = socket(AF_INET, SOCK_STREAM)
