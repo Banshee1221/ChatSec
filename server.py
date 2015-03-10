@@ -52,7 +52,7 @@ def padder(message):
     :param message: The plaintext message to be encrypted
     :return: The plaintext message to be encrypted, with added padding
     """
-    return message + ((32-len(message) % 32) * '{')
+    return message + ((32-len(message) % 32) * '{') # AES plain/cipher-text block size is 16 bytes, not 32 afaik
 
 def encrypt(ciph, plaintext):
     """
@@ -69,12 +69,10 @@ def decrypt(ciph, ciphertext):
     :return: The decrypted plaintext message
     """
     dec = ciph.decrypt(ciphertext).decode('utf-8')
-    l = dec.count('{')
+    l = dec.count('{') # assuming '{' isn't used anywhere - maybe find another special char
     return dec[:len(dec) - l]
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-HOST = 'localhost'
-PORT = 8888
 
 masterKey = b'\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66' \
             b'\x83\xea\x9e\x60\xd4\xfe\xfa'
@@ -87,10 +85,15 @@ connectedClients = 0
 
 print "Initialising Server"
 soc = socket(AF_INET, SOCK_STREAM)
+
 print "Binding Address and Port"
+HOST = 'localhost'
+PORT = 8888
 soc.bind((HOST, PORT))
+
 print ("Address: "+str(HOST)+" | Port: "+str(PORT))
 soc.listen(2)
+
 print "Server Started\nListening..."
 
 # message = "test"
