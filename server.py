@@ -11,12 +11,12 @@ def clienthandler():
     Handles incoming connections from the client applications.
     :return: True
     """
-    conn, add = soc.accept()
-    logging.info("%s connected.", add)
+    conn, client = soc.accept()
+    logging.info("%s connected.", client)
     incoming = conn.recv(1024)
-    logging.info("Got data: || %s || from client %s", str(incoming).replace('\r', ' -line- ').replace('\n', ' -line- '), add)
+    logging.info("Got data: || %s || from client %s", str(incoming).replace('\r', ' -line- ').replace('\n', ' -line- '), client)
     key = cPickle.loads(incoming)
-    logging.info("Loaded serialized data from %s: %s", add, key)
+    logging.info("Loaded serialized data from %s: %s", client, key)
     decrypted = ''
     for keys in cKeyList:
         logging.info("Generating new cipher with key %s", keys)
@@ -39,9 +39,9 @@ def messagepasser(client, msg):
     :return: Boolean for successful or not
     """
     try:
-        for all in cKeyList:
-            if all != client:
-                all.sendall(msg)
+        for key in cKeyList:
+            if key != client:
+                key.sendall(msg)
         return True
     except:
         return False
