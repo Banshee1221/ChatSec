@@ -52,7 +52,7 @@ def padder(message):
     :param message: The plaintext message to be encrypted
     :return: The plaintext message to be encrypted, with added padding
     """
-    return message + ((32-len(message) % 32) * '{') # AES plain/cipher-text block size is 16 bytes, not 32 afaik
+    return message + ((16-len(message) % 16) * '{')
 
 def encrypt(ciph, plaintext):
     """

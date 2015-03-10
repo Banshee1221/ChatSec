@@ -50,7 +50,7 @@ class Client:
         :param message: The plaintext message to be encrypted
         :return: The plaintext message to be encrypted, with added padding
         """
-        return message + ((32-len(message) % 32) * '{')
+        return message + ((16-len(message) % 16) * '{')
 
     def encrypt(self, plaintext):
         """
