@@ -38,29 +38,35 @@ def clienthandler():
     if len(msg) == 3:
         # Add new client to connected clients list
         if decryptedUID not in connectedClients:
-            newclient = {"uid":decryptedUID, "address":addr_pair}
+            newclient = {"uid":eval(decryptedUID), "address":addr_pair}
             connectedClients.append(newclient)
         # Send list of connected clients to client
         # TODO: make this a broadcast to all clients
-        logging.info("Creating auth cert")
-        connListEnc = encrypt(clientCiph, connectedClients)
-        out = [connListEnc]
-        logging.info("Encrypted connectedClients with master cipher %s\n" \
-                    "Sending to client", out)
+        logging.info("Broadcasting connected clients")
+        for client in connectedClients:
+            key = cKeyList[client["uid"] - 1]
+            clientCiph = AES.new(key) # note: duplicate key creation
+            connListEnc = encrypt(clientCiph, connectedClients)
+            out = [connListEnc]
+            logging.info("Encrypted connectedClients with master cipher %s\n" \
+                    "Sending to client %s", out, client["uid"])
         send(out, conn)
     elif len(msg) == 4:
-        # Generate new secret key
-        secKey = masterKey # TODO: dynamically generate this!!!1!
-        # Encrypt secret key for client and destination
-        secKeyEnc = encrypt(clientCiph, secKey)
-
+        # Create the other client's cipher
         otherUID = decrypt(clientCiph, msg[2])
         if otherUID not in connectedClients:
             m = cPickle.dumps(["Target client not connected"])
             send(m, conn)
         otherKey = cKeyList[otherUID - 1]
         otherCiph = AES.new(otherKey)
+
+        # Generate new secret key
+        secKey = masterKey # TODO: dynamically generate this!!!1!
+
+        # Encrypt secret key for client and destination
+        secKeyEnc = encrypt(clientCiph, secKey)
         otherSecKeyEnc = encrypt(otherCiph, secKey)
+
         # Send authentication package to client
         pack = [secKeyEnc, otherSecKeyEnc]
         send(pack, conn)
@@ -93,7 +99,7 @@ def padder(message):
     :param message: The plaintext message to be encrypted
     :return: The plaintext message to be encrypted, with added padding
     """
-    return message + ((16-len(message) % 16) * '{')
+    return message + ((16-len(message) % 16) * '`')
 
 def encrypt(ciph, plaintext):
     """
@@ -110,7 +116,7 @@ def decrypt(ciph, ciphertext):
     :return: The decrypted plaintext message
     """
     dec = ciph.decrypt(ciphertext)
-    l = dec.count('{') # assuming '{' isn't used anywhere - maybe find another special char
+    l = dec.count('`') # assuming '`' isn't used anywhere - maybe find another special char
     return dec[:len(dec) - l]
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
