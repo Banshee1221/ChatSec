@@ -1,8 +1,9 @@
 from socket import *
 from threading import Thread
+from random import random
+from Crypto.Cipher import AES
 import logging
 import sys
-from Crypto.Cipher import AES
 import cPickle
 
 
@@ -11,34 +12,80 @@ def clienthandler():
     Handles incoming connections from the client applications.
     :return: True
     """
-    conn, client = soc.accept()
-    logging.info("%s connected.", client)
-    incoming = conn.recv(1024)
-    logging.info("Got data: || %s || from client %s", str(incoming).replace('\r', ' -line- ').replace('\n', ' -line- '), client)
-    key = cPickle.loads(incoming)
-    logging.info("Loaded serialized data from %s: %s", client, key)
-    decrypted = ''
-    keyToUse = cKeyList[key[0] - 1]
+    # Load data from client
+    conn, addr_pair = soc.accept()
+    logging.info("%s connected.", addr_pair)
+    msg = receive(conn)
+    # TODO: check nonce is fresh?
+
+    # Find cipher for user
+    keyToUse = cKeyList[msg[0] - 1] # TODO: handle invalid uids
     logging.info("Generating new cipher with key %s", keyToUse)
     clientCiph = AES.new(keyToUse)
     logging.info("Generated new cipher for client.")
-    decrypted = decrypt(clientCiph, key[1])
-    if decrypted == str(key[0]):
-        logging.info("Decrypted text: %s", decrypted)
-    if decrypted == '':
-        logging.info("Unable to decrypt. Client rejected.")
+
+    # Authenticate client
+    decryptedUID = decrypt(clientCiph, msg[1])
+    if decryptedUID == str(msg[0]):
+        logging.info("Decrypted UID: %s", decryptedUID)
+    else:
+        logging.info("Unable to authenticate. Client rejected.")
         return False
-    if decrypted not in connectedClients:
-        connectedClients.append(decrypted)
-    authEr(clientCiph, conn)
+
+    # Handle message from client
+    # TODO: add message field to distinguish between message types.
+    # (Using message length for now)
+    if len(msg) == 3:
+        # Add new client to connected clients list
+        if decryptedUID not in connectedClients:
+            newclient = {"uid":decryptedUID, "address":addr_pair}
+            connectedClients.append(newclient)
+        # Send list of connected clients to client
+        # TODO: make this a broadcast to all clients
+        logging.info("Creating auth cert")
+        connListEnc = encrypt(clientCiph, connectedClients)
+        out = [connListEnc]
+        send(out, conn)
+        logging.info("Encrypted connectedClients with master cipher %s\n" \
+                    "Sending to client", out)
+    elif len(msg) == 4:
+        # Generate new secret key
+        secKey = masterKey # TODO: dynamically generate this!!!1!
+        # Encrypt secret key for client and destination
+        secKeyEnc = encrypt(clientCiph, secKey)
+
+        otherUID = decrypt(clientCiph, msg[2])
+        if otherUID not in connectedClients:
+            m = cPickle.dumps(["Target client not connected"])
+            send(m, conn)
+        otherKey = cKeyList[otherUID - 1]
+        otherCiph = AES.new(otherKey)
+        otherSecKeyEnc = encrypt(otherCiph, secKey)
+        # Send authentication package to client
+        pack = [secKeyEnc, otherSecKeyEnc]
+        send(pack, conn)
+
     return True
 
-def authEr(ciph, connection):
-    logging.info("Creating auth cert")
-    connList = encrypt(ciph, str(connectedClients))
-    logging.info("Encrypted connectedClients with master cipher %s\nSending to client", connList)
-    connection.send(connList)
+def send(msg, socket):
+    """Sends a message to the given socket"""
+    nonce = random() # Not sure if this is necessary for all messages
+    msg.append(nonce) # Currently unused
+    toSend = cPickle.dumps(msg) # TODO: add compression
+    socket.send(toSend)
 
+def receive(socket):
+    """
+    Receives a single message and displays it.
+    :return: The reply sent over the socket. False if no reply.
+    """
+    rec = socket.recv(1024)
+    if rec != '':
+        logging.info("Received %s from server.", rec)
+        msg = cPickle.loads(rec)
+        logging.info("Loaded serialized data: %s", msg)
+        return msg
+    return False
 
 def padder(message):
     """
@@ -54,7 +101,7 @@ def encrypt(ciph, plaintext):
     :param plaintext: Plaintext message to be encrypted
     :return: Encrypted message based on the plaintext input
     """
-    return ciph.encrypt(padder(plaintext))
+    return ciph.encrypt(padder(str(plaintext)))
 
 def decrypt(ciph, ciphertext):
     """
@@ -87,7 +134,8 @@ PORT = 8888
 soc.bind((HOST, PORT))
 
 print ("Address: "+str(HOST)+" | Port: "+str(PORT))
-soc.listen(2)
+soc.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+soc.listen(5)
 
 print "Server Started\nListening..."
 
@@ -97,11 +145,10 @@ print "Server Started\nListening..."
 # dec = decrypt(cipher, enc)
 # print dec+"\n==================="
 
-for i in range(2):
-    Thread(target=clienthandler).start()
+#for i in range(5):
+#    Thread(target=clienthandler).start()
+#Thread(target=clienthandler).start()
+while 1:
+    clienthandler()
 
-soc.close()
-
-
-
-
+soc.close() # we should maybe call shutdown(1) before close: https://docs.python.org/2/howto/sockets.html#disconnecting
