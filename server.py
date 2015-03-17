@@ -45,9 +45,9 @@ def clienthandler():
         logging.info("Creating auth cert")
         connListEnc = encrypt(clientCiph, connectedClients)
         out = [connListEnc]
-        send(out, conn)
         logging.info("Encrypted connectedClients with master cipher %s\n" \
                     "Sending to client", out)
+        send(out, conn)
     elif len(msg) == 4:
         # Generate new secret key
         secKey = masterKey # TODO: dynamically generate this!!!1!

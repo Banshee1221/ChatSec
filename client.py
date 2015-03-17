@@ -15,9 +15,7 @@ class Client:
     clientCipher = ''
     serverSocket = ''
     clientSocket = ''
-    clients = {}
-    connectedClients = []
-    clientAddresses = {}
+    connClients = [] # list of dicts, each dict is a connected client
 
     def __init__(self, uid, key):
         self.UID = uid
@@ -46,12 +44,11 @@ class Client:
         authVar = [self.UID, keyEnc] # TODO: add enum for connection type
         self.send(authVar, self.serverSocket)
         rec = self.receive(self.serverSocket)
+        logging.info("Recieved server auth info: %s", rec)
         if not rec:
             return False
-        connectedClients = self.decrypt(rec[0])
-        clientAddresses = self.decrypt(rec[1])
-        logging.info("Received client list from server: %s", connectedClients)
-        logging.info("Received client addresses from server: %s", clientAddresses)
+        self.connClients = self.decrypt(rec[0])
+        logging.info("Received client list from server: %s", self.connClients)
         return True
 
     def cliAuth(self, otherUID):
@@ -158,12 +155,13 @@ class Client:
 
         # Connect to other client
         ruid = raw_input("Recipient uid: ")
-        while ruid not in self.clients:
+        while ruid not in [x["uid"] for x in self.connClients]:
             print "Target client not connected. Choose another client."
+            logging.info("Connected clients: %s", self.connClients)
             ruid = raw_input("Recipient uid: ")
 
         logging.info("Connecting to client.")
-        self.connect(self.clientSocket, self.clients[ruid]["address"])
+        self.connect(self.clientSocket, self.connClients[ruid]["address"])
         logging.info("Established connection to client.")
 
         logging.info("Authenticating with client...")
