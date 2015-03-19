@@ -7,7 +7,7 @@ import sys
 import cPickle
 
 
-def clienthandler():
+def clienthandler(): # Mirrors the client's listen method
     """
     Handles incoming connections from the client applications.
     :return: True
@@ -35,41 +35,53 @@ def clienthandler():
     # Handle message from client
     # TODO: add message field to distinguish between message types.
     # (Using message length for now)
-    if len(msg) == 3:
+    if len(msg) == 4: # server authentication
+        logging.info("Client-server auth...")
         # Add new client to connected clients list
+        decryptedAddress = decrypt(clientCiph, msg[2])
         if decryptedUID not in connectedClients:
-            newclient = {"uid":eval(decryptedUID), "address":addr_pair}
+            newclient = {"uid":int(decryptedUID), "address":eval(decryptedAddress)}
+            logging.info("New address: %s", eval(decryptedAddress))
             connectedClients.append(newclient)
         # Send list of connected clients to client
         # TODO: make this a broadcast to all clients
-        logging.info("Broadcasting connected clients")
-        for client in connectedClients:
-            key = cKeyList[client["uid"] - 1]
-            clientCiph = AES.new(key) # note: duplicate key creation
-            connListEnc = encrypt(clientCiph, connectedClients)
-            out = [connListEnc]
-            logging.info("Encrypted connectedClients with master cipher %s\n" \
-                    "Sending to client %s", out, client["uid"])
+        # logging.info("Broadcasting connected clients")
+        # for client in connectedClients:
+        #    key = cKeyList[client["uid"] - 1]
+        #    clientCiph = AES.new(key) # note: duplicate key creation
+        #    connListEnc = encrypt(clientCiph, connectedClients)
+        #    out = [connListEnc]
+        #    logging.info("Encrypted connectedClients with client cipher %s\n" \
+        #            "Sending to client %s", out, client["uid"])
+        connListEnc = encrypt(clientCiph, connectedClients)
+        out = [connListEnc]
+        logging.info("Encrypted connectedClients with client cipher %s\n" \
+                "Sending to client %s", out, eval(decryptedUID))
         send(out, conn)
-    elif len(msg) == 4:
+        logging.info("Connected clients list sent")
+    elif len(msg) == 5: #other client authentication
         # Create the other client's cipher
-        otherUID = decrypt(clientCiph, msg[2])
-        if otherUID not in connectedClients:
-            m = cPickle.dumps(["Target client not connected"])
+        logging.info("Client-client keygen...")
+        otherUID = int(decrypt(clientCiph, msg[2]))
+        if otherUID not in [x["uid"] for x in connectedClients]:
+            logging.info("Target client not connected")
+            m = ["Target client not connected"]
             send(m, conn)
+            return False
         otherKey = cKeyList[otherUID - 1]
         otherCiph = AES.new(otherKey)
 
-        # Generate new secret key
+        logging.info("Generating session key...")
         secKey = masterKey # TODO: dynamically generate this!!!1!
 
-        # Encrypt secret key for client and destination
+        logging.info("Encrypting session key")
         secKeyEnc = encrypt(clientCiph, secKey)
         otherSecKeyEnc = encrypt(otherCiph, secKey)
 
-        # Send authentication package to client
+        logging.info("Sending session key")
         pack = [secKeyEnc, otherSecKeyEnc]
         send(pack, conn)
+        logging.info("Session key sent")
 
     return True
 
@@ -87,7 +99,7 @@ def receive(socket):
     """
     rec = socket.recv(1024)
     if rec != '':
-        logging.info("Received %s from server.", rec)
+        logging.info("Received %s from client.", rec)
         msg = cPickle.loads(rec)
         logging.info("Loaded serialized data: %s", msg)
         return msg
@@ -121,8 +133,7 @@ def decrypt(ciph, ciphertext):
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
-masterKey = b'\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66' \
-            b'\x83\xea\x9e\x60\xd4\xfe\xfa'
+masterKey = b'\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66\x83\xea\x9e\x60\xd4\xfe\xfa'
 cipher = AES.new(masterKey)
 
 

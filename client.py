@@ -11,17 +11,22 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 class Client:
 
     UID = ''
-    serverCipher = ''
-    clientCipher = ''
-    serverSocket = ''
-    clientSocket = ''
+    serverCipher = '' # Cipher shared with server
+    clientCipher = '' # Session cipher shared with client
+    # TODO(optional): use keyring of ciphers instead of a single cipher
+    clientSocket = '' # Send messages to client
+    listenSocket = '' # Receive messages from client
+    localAddress = () # Address pair for listenSocket
     connClients = [] # list of dicts, each dict is a connected client
+    servKey = ''
 
     def __init__(self, uid, key):
+        self.servKey = key
         self.UID = uid
         logging.info("Set UID: %s", uid)
         self.serverCipher = AES.new(key)
         logging.info("Created AES cipher using key %s.", key)
+        self.localAddress = ("localhost", 61000+uid)
         logging.info("Running client startup\n================================")
         self.run()
 
@@ -35,6 +40,7 @@ class Client:
         except error:
             logging.info("Failed to set up socket - no connection to %s.",
                     address_pair)
+            logging.info("Socket connection error: %s", error.strerror)
             return False
         sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         return sock
@@ -42,41 +48,89 @@ class Client:
     def srvAuth(self):
         """Authenticates this client with the server.
         :return: True if authentication is successful, false otherwise."""
+        # Connect to server
+        logging.info("Connecting to server.")
+        srvSock = self.connect(('localhost', 8888))
+        if not srvSock:
+            logging.info("Failed to connect to server")
+            exit()
+        logging.info("Established connection to server.")
+        logging.info("Server socket connected? %s", not srvSock=='')
+
+        # Authenticate with server
         uidEnc = self.encrypt(self.UID, self.serverCipher)
-        authVar = [self.UID, uidEnc] # TODO: add enum for connection type
-        self.send(authVar, self.serverSocket)
-        serReply = self.receive(self.serverSocket)
+        addrEnc = self.encrypt(self.localAddress, self.serverCipher)
+        authVar = [self.UID, uidEnc, addrEnc] # TODO: add enum for connection type
+        self.send(authVar, srvSock)
+
+        # Confirm authentication
+        serReply = self.receive(srvSock)
         logging.info("Recieved server auth info: %s", serReply)
         if not serReply:
             return False
-        self.connClients = eval(self.decrypt(serReply[0]))
+        self.connClients = eval(str(self.decrypt(serReply[0])))
         logging.info("Received client list from server: %s", self.connClients)
+
+        srvSock.close()
         return True
 
     def cliAuth(self, otherUID):
         """Authenticates this client with another connected user.
         :return: True if authentication is successful, false otherwise."""
+        # Connect to server
+        logging.info("Connecting to server.")
+        srvSock = self.connect(('localhost', 8888))
+        if not srvSock:
+            logging.info("Failed to connect to server")
+            exit()
+        logging.info("Established connection to server.")
+        logging.info("Server socket connected? %s", not srvSock=='')
+
         # Request session key from server
         UIDEnc = self.encrypt(self.UID, self.serverCipher)
         otherUIDEnc = self.encrypt(otherUID, self.serverCipher)
-        authVar = [self.UID, UIDEnc, otherUIDEnc]
-        self.send(authVar, self.serverSocket)
-        serReply = self.receive(self.serverSocket)
+        authVar = [self.UID, UIDEnc, otherUIDEnc, random()]
+        # random number here is a space-filler so that the server can distinguish
+        # between a new client and one wanting to connect to another client. When
+        # the ".*Auth" methods here send dicts instead of lists, we can remove
+        # this field.
+        logging.info("Sending request for session key.")
+        self.send(authVar, srvSock)
+        logging.info("Waiting for reply with session key.")
+        serReply = self.receive(srvSock)
         if not serReply:
+            logging.info("Got nothing from server")
             return False
-        # Decrypt and pass on session key
-        sKey = self.decrypt(serReply[0], self.serverCipher)
-        logging.info("Got session key info from server: %s", serReply)
+        if len(serReply) == 2:
+            logging.info("Target client not connected")
+            print serReply[0]
+            return False
 
-        # TODO: Complete this
+        # Decrypt and pass on session key
+        logging.info("Got session key info from server: %s", serReply)
+        sKey = self.decrypt(serReply[0])
+        logging.info("Decrypted session key. Creating cipher.")
+        logging.info("Session key: %s with type %s", sKey, type(sKey))
+        logging.info("Required key: %s", '\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66\x83\xea\x9e\x60\xd4\xfe\xfa')
+        logging.info("Server key : %s with type %s", self.servKey, type(self.servKey))
+        logging.info("Session key is same length as server key? %s", len(sKey) == len(self.servKey))
+        logging.info("Session key correctly decrypted? %s", sKey == b'\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66\x83\xea\x9e\x60\xd4\xfe\xfa')
         self.clientCipher = AES.new(sKey)
-        UIDEnc2 = self.encrypt(self.UID, self.clientCipher)
-        cliAuthVar = [self.UID, UIDEnc2, serReply[1]]
+        UIDEncOther = self.encrypt(self.UID, self.clientCipher)
+        cliAuthVar = [self.UID, UIDEncOther, serReply[1]]
         self.send(cliAuthVar, self.clientSocket)
+
         cliReply = self.receive(self.clientSocket)
-        print cliReply
+        # TODO: Complete this
+        logging.info("Recieved reply from client: %s", cliReply)
         if not cliReply:
+            logging.info("Client reply was empty.")
             return False
+        dec = self.clientCipher.decrypt(incoming[1])
+        dec = dec[:len(dec) - dec.count('`')]
+        if otherUID == dec:
+            logging.info("Other client successfully authenticated.")
+        srvSock.close()
         return True
 
     def send(self, msg, sock):
@@ -92,21 +146,42 @@ class Client:
         :return: The reply sent over the socket. False if no reply.
         """
         rec = sock.recv(1024)
-        if rec != '':
+        if rec:
             logging.info("Received %s from server.", rec)
             msg = cPickle.loads(rec)
             logging.info("Loaded content: %s", msg)
             return msg
         return False
 
-    def listen(self):
+    def listen(self): # Mirrors the server's clienthandler method
         """
         Receives all messages from the client for as long as the socket is open.
         """
-        if self.clientSocket:
-            incoming = self.receive(self.clientSocket)
-            decrypted = self.decrypt(incoming)
-            logging.info("Message from client: %s", decrypted)
+        if not self.listenSocket:
+            self.listenSocket = socket(AF_INET, SOCK_STREAM)
+            self.listenSocket.bind(self.localAddress)
+            self.listenSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+            self.listenSocket.listen(5)
+            logging.info("Client listening at address %s", self.localAddress)
+        conn, addr = self.listenSocket.accept()
+        logging.info("Connected to client at address %s", addr)
+        # TODO: work from here
+        incoming = self.receive(conn)
+        if incoming:
+            if len(incoming) == 4: # New connection
+                logging.info("New connection from other client")
+                sKey = self.decrypt(incoming[2])
+                self.clientCipher = AES.new(sKey)
+                dec = self.clientCipher.decrypt(incoming[1])
+                dec = dec[:len(dec) - dec.count('`')]
+                if incoming[0] == dec: # Valid user
+                    reply = self.clientCipher.encrypt(self.padder(str(self.UID)))
+                    self.send(reply, conn)
+            if len(incoming) == 2:
+                dec = self.clientCipher.decrypt(incoming[0])
+                dec = dec[:len(dec) - dec.count('`')]
+
+                print "\nMessage from client:", dec, "\n"
 
     def padder(self, message):
         """
@@ -133,45 +208,43 @@ class Client:
         """
         self.serverCipher
         logging.info("Ciphertext length mod 16: %d", len(ciphertext)%16)
-        dec = self.serverCipher.decrypt(ciphertext).decode('utf-8')
+        dec = self.serverCipher.decrypt(ciphertext)
         l = dec.count('`')
         return dec[:len(dec) - l]
 
     def run(self):
-        # Connect to server
-        logging.info("Connecting to server.")
-        self.serverSocket = self.connect(('localhost', 8888))
-        if not self.serverSocket:
-            logging.info("Failed to connect to server")
-            exit()
-        logging.info("Established connection to server.")
-        logging.info("Server socket connected? %s", not self.serverSocket=='')
-
+        # Authenticate with server
         logging.info("Authenticating with server...")
         self.srvAuth()
         logging.info("Authenticated with server.")
 
         # TODO: start thread to listen to the server
-        #self.serverSocket.listen(5)
         t1 = Thread(target=self.listen).start()
 
         # Connect to other client
-        ruid = raw_input("Recipient uid: ")
+        ruid = ''
         while ruid not in [x["uid"] for x in self.connClients]:
-            print "Please choose another client."\
-                    "Connected clients are:"
+            print "Connected clients are:"
             for x in self.connClients:
                 print x["uid"]
             logging.info("Connected clients: %s",
                     [x["uid"] for x in self.connClients])
-            ruid = raw_input("Recipient uid: ")
+            try:
+                ruid = int(raw_input("Recipient uid: "))
+            #except (KeyboardInterrupt, SystemExit):
+            #    exit()
+            except ValueError:
+                print "UID must be an integer."
+                continue
             if ruid not in [x["uid"] for x in self.connClients]:
                 print "Target client not connected."
                 continue
-            if eval(ruid) == self.UID:
+            if ruid == self.UID:
                 print "Cannot send messages to yourself. Get some friends."
                 ruid = ''
                 continue
+            if ruid == 'e':
+                exit()
 
             logging.info("Connecting to client.")
             targetAddress = ('')
@@ -186,7 +259,10 @@ class Client:
             logging.info("Established connection to client.")
 
             logging.info("Authenticating with client...")
-            self.cliAuth(ruid)
+            if not self.cliAuth(ruid):
+                logging.info("Authentication with client failed.")
+                ruid = ''
+                continue
             logging.info("Authenticated with client.")
 
         # Send messages
@@ -195,3 +271,4 @@ class Client:
             # TODO: encrypt message
             self.send([msg], self.clientSocket)
             msg = raw_input("Enter message (type '~e' to exit): ")
+        exit()
