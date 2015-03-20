@@ -8,7 +8,7 @@ def padder(message):
     """
     if len(message) % 16 == 0:
         return message
-    return message + ((16-len(message) % 16) * '`')
+    return message + ((16-len(message) % 16) * b'\x06')
 
 def encrypt(plaintext, cipher):
     """
@@ -26,5 +26,5 @@ def decrypt(ciphertext, cipher):
     :return: The decrypted plaintext message
     """
     dec = cipher.decrypt(ciphertext)
-    l = dec.count('`')
+    l = dec.count(b'\x06')
     return dec[:len(dec) - l]
