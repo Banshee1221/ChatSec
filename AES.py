@@ -6,6 +6,8 @@ def padder(message):
     :param message: The plaintext message to be encrypted
     :return: The plaintext message to be encrypted, with added padding
     """
+    if len(message) % 16 == 0:
+        return message
     return message + ((16-len(message) % 16) * '`')
 
 def encrypt(plaintext, cipher):
