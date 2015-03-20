@@ -122,12 +122,12 @@ class Client:
 
         cliReply = self.receive(self.clientSocket)
         # TODO: Complete this
-        logging.info("Recieved reply from client: %s", cliReply)
+        logging.info("Received reply from client: %s", cliReply)
         if not cliReply:
             logging.info("Client reply was empty.")
             return False
-        dec = self.clientCipher.decrypt(incoming[1])
-        dec = dec[:len(dec) - dec.count('`')]
+        dec = self.clientCipher.decrypt(cliReply[0])
+        dec = dec[:len(dec) - dec.count(b'\x06')]
         if otherUID == dec:
             logging.info("Other client successfully authenticated.")
         srvSock.close()
@@ -147,7 +147,7 @@ class Client:
         """
         rec = sock.recv(1024)
         if rec:
-            logging.info("Received %s from server.", rec)
+            logging.info("Received %s from server/client.", rec)
             msg = cPickle.loads(rec)
             logging.info("Loaded content: %s", msg)
             return msg
@@ -171,15 +171,24 @@ class Client:
             if len(incoming) == 4: # New connection
                 logging.info("New connection from other client")
                 sKey = self.decrypt(incoming[2])
+                logging.info("Creating session cipher...")
                 self.clientCipher = AES.new(sKey)
+                logging.info("Authenticating other client")
                 dec = self.clientCipher.decrypt(incoming[1])
-                dec = dec[:len(dec) - dec.count('`')]
+                dec = int(dec[:len(dec) - dec.count(b'\x06')])
                 if incoming[0] == dec: # Valid user
+                    logging.info("Other client authenticated.")
                     reply = self.clientCipher.encrypt(self.padder(str(self.UID)))
-                    self.send(reply, conn)
+                    self.send([reply], conn)
+                    logging.info("Sent reply")
+                else:
+                    logging.info("Other client not authenticated. Got %s expected %s", dec, incoming[0])
+                    logging.info("Incoming type: %s. Decrypted type: %s", type(incoming[0]), type(dec))
+                    return False
             if len(incoming) == 2:
+                logging.info("Message received from other client.")
                 dec = self.clientCipher.decrypt(incoming[0])
-                dec = dec[:len(dec) - dec.count('`')]
+                dec = dec[:len(dec) - dec.count(b'\x06')]
 
                 print "\nMessage from client:", dec, "\n"
 
@@ -189,7 +198,7 @@ class Client:
         :param message: The plaintext message to be encrypted
         :return: The plaintext message to be encrypted, with added padding
         """
-        return message + ((16-len(message) % 16) * '`')
+        return message + ((16-len(message) % 16) * b'\x06')
 
     def encrypt(self, plaintext, cipher):
         """
@@ -209,7 +218,7 @@ class Client:
         self.serverCipher
         logging.info("Ciphertext length mod 16: %d", len(ciphertext)%16)
         dec = self.serverCipher.decrypt(ciphertext)
-        l = dec.count('`')
+        l = dec.count(b'\x06')
         return dec[:len(dec) - l]
 
     def run(self):

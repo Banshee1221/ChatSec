@@ -63,6 +63,7 @@ def clienthandler(): # Mirrors the client's listen method
         # Create the other client's cipher
         logging.info("Client-client keygen...")
         otherUID = int(decrypt(clientCiph, msg[2]))
+        logging.info("connectedClients: %s of type %s", [x["uid"] for x in connectedClients], type(connectedClients[0]["uid"]))
         if otherUID not in [x["uid"] for x in connectedClients]:
             logging.info("Target client not connected")
             m = ["Target client not connected"]
@@ -111,7 +112,7 @@ def padder(message):
     :param message: The plaintext message to be encrypted
     :return: The plaintext message to be encrypted, with added padding
     """
-    return message + ((16-len(message) % 16) * '`')
+    return message + ((16-len(message) % 16) * b'\x06')
 
 def encrypt(ciph, plaintext):
     """
@@ -128,7 +129,7 @@ def decrypt(ciph, ciphertext):
     :return: The decrypted plaintext message
     """
     dec = ciph.decrypt(ciphertext)
-    l = dec.count('`') # assuming '`' isn't used anywhere - maybe find another special char
+    l = dec.count(b'\x06') # assuming b'\x06' isn't used anywhere - maybe find another special char
     return dec[:len(dec) - l]
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
