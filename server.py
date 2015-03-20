@@ -12,6 +12,7 @@ import os
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 HOST = ''  # Symbolic name meaning all available interfaces
 PORT = 8888  # Arbitrary non-privileged port
+CLIENTS = {}
 KEYS = {1: '(e\xd0\t\xacn\xa8k}\xbe\x80s)>m\x83', 2: '({l\xa8\xee\x00\xf0\xe6b\xb8\n\x96\xb8\xcc\xd20', 3: '\xbaB\x80\x96\x84\x15*\x1b\x0e\xc9\xbb\xbdF~\x8a9'}
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -48,26 +49,32 @@ def clientthread(conn):
         if not data:
             break
 
-        print "Received: "+data
+        print "Received: "+data.replace('\n', '').replace('\r', '')
         try:
             initAuth = pickle.loads(data)
-            logging.info("Loaded data from the client: %s", initAuth)
-            sessKey = os.urandom(16)
-            logging.info("Generated random session key: %s", sessKey)
-            clientID = initAuth[0]
-            redirID = initAuth[1]
-            expire = initAuth[2]
-            nonce = initAuth[3]
-            clientRedirCiph = AES.new(KEYS[int(redirID)])
-            clientCiph = AES.new(KEYS[int(clientID)])
-            logging.info("Generated client cipher block: %s", clientRedirCiph)
-            passOn = [sessKey, clientID]
-            passOnEnc = encrypt(passOn, clientRedirCiph)
-            logging.info("Encrypted Kab, A with B key")
+            if isinstance(initAuth, list):
+                if str(initAuth[0]) in CLIENTS:
+                    logging.info("User already in connected list.")
+                else:
+                    CLIENTS[str(initAuth[0])] = {'IP': initAuth[1][0], 'PORT': initAuth[1][0]}
+            else:
+                logging.info("Loaded data from the client: %s", initAuth)
+                sessKey = os.urandom(16)
+                logging.info("Generated random session key: %s", sessKey)
+                clientID = initAuth[0]
+                redirID = initAuth[1]
+                expire = initAuth[2]
+                nonce = initAuth[3]
+                clientRedirCiph = AES.new(KEYS[int(redirID)])
+                clientCiph = AES.new(KEYS[int(clientID)])
+                logging.info("Generated client cipher block: %s", clientRedirCiph)
+                passOn = [sessKey, clientID]
+                passOnEnc = encrypt(passOn, clientRedirCiph)
+                logging.info("Encrypted Kab, A with B key")
 
-            response = [nonce, sessKey, redirID, passOnEnc]
-            responseEnc = encrypt(response, clientCiph)
-            conn.sendall(pickle.dumps(responseEnc))
+                response = [nonce, sessKey, redirID, passOnEnc]
+                responseEnc = encrypt(response, clientCiph)
+                conn.sendall(pickle.dumps(responseEnc))
 
         except IndexError:
             logging.info("Non-auth. Rejected.")
