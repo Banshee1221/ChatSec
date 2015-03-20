@@ -1,107 +1,87 @@
-from socket import *
-from threading import Thread
-import logging
+import socket
 import sys
+from thread import *
+import pickle
+from AES import *
 from Crypto.Cipher import AES
-import cPickle
+import random
+import logging
+import os
 
-
-def clienthandler():
-    """
-    Handles incoming connections from the client applications.
-    :return: True
-    """
-    conn, client = soc.accept()
-    logging.info("%s connected.", client)
-    incoming = conn.recv(1024)
-    logging.info("Got data: || %s || from client %s", str(incoming).replace('\r', ' -line- ').replace('\n', ' -line- '), client)
-    key = cPickle.loads(incoming)
-    logging.info("Loaded serialized data from %s: %s", client, key)
-    decrypted = ''
-    keyToUse = cKeyList[key[0] - 1]
-    logging.info("Generating new cipher with key %s", keyToUse)
-    clientCiph = AES.new(keyToUse)
-    logging.info("Generated new cipher for client.")
-    decrypted = decrypt(clientCiph, key[1])
-    if decrypted == str(key[0]):
-        logging.info("Decrypted text: %s", decrypted)
-    if decrypted == '':
-        logging.info("Unable to decrypt. Client rejected.")
-        return False
-    if decrypted not in connectedClients:
-        connectedClients.append(decrypted)
-    authEr(clientCiph, conn)
-    return True
-
-def authEr(ciph, connection):
-    logging.info("Creating auth cert")
-    connList = encrypt(ciph, str(connectedClients))
-    logging.info("Encrypted connectedClients with master cipher %s\nSending to client", connList)
-    connection.send(connList)
-
-
-def padder(message):
-    """
-    Ensured that the message (plaintext) is divisible by 32.
-    :param message: The plaintext message to be encrypted
-    :return: The plaintext message to be encrypted, with added padding
-    """
-    return message + ((16-len(message) % 16) * '{')
-
-def encrypt(ciph, plaintext):
-    """
-    Encrypts the plaintext message.
-    :param plaintext: Plaintext message to be encrypted
-    :return: Encrypted message based on the plaintext input
-    """
-    return ciph.encrypt(padder(plaintext))
-
-def decrypt(ciph, ciphertext):
-    """
-    Decrypts the ciphertext message.
-    :param ciphertext: Ciphertext message based on the same cipher key
-    :return: The decrypted plaintext message
-    """
-    dec = ciph.decrypt(ciphertext)
-    l = dec.count('{') # assuming '{' isn't used anywhere - maybe find another special char
-    return dec[:len(dec) - l]
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+HOST = ''  # Symbolic name meaning all available interfaces
+PORT = 8888  # Arbitrary non-privileged port
+KEYS = {1: '(e\xd0\t\xacn\xa8k}\xbe\x80s)>m\x83', 2: '({l\xa8\xee\x00\xf0\xe6b\xb8\n\x96\xb8\xcc\xd20', 3: '\xbaB\x80\x96\x84\x15*\x1b\x0e\xc9\xbb\xbdF~\x8a9'}
 
-masterKey = b'\x5a\x00\x65\xcf\x47\x1a\x30\x3f\x61\x43\xb3\xa9\xab\x1a\x13\xe8\xb6\xfe\x8d\xb0\xff\x03\x85\xd1\x66' \
-            b'\x83\xea\x9e\x60\xd4\xfe\xfa'
-cipher = AES.new(masterKey)
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print 'Socket created'
 
+# Bind socket to local host and port
+try:
+    s.bind((HOST, PORT))
+except socket.error as msg:
+    print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
+    sys.exit()
 
-cKeyList = [b'\x19\x17\xe3\x34\x07\xc2\x83\x66\xc8\xe3\xb9\x75\xb1\x7e\x73\x74\x58\x93\x12\x67\x6b\x90\x22\x9a\xdb\x4c\xe6\xe5\x85\x52\xe2\x23',
-            b'\x3f\x45\x51\x43\xe7\x5d\x1e\x7f\xd6\x59\xde\xa5\x70\x23\x49\x6d\xa3\xbd\x9f\x2f\x89\x08\xd1\xe2\xac\x32\x64\x1c\xd8\x19\xd3\xe3', "o'H3}f23U>eQC1[WdrB90#wajZ@;DSc7"]
+print 'Socket bind complete'
 
-connectedClients = []
+# Start listening on socket
+s.listen(10)
+print 'Socket now listening'
 
-print "Initialising Server"
-soc = socket(AF_INET, SOCK_STREAM)
+# Function for handling connections. This will be used to create threads
+def clientthread(conn):
+    # Sending message to connected client
+    # conn.send('Welcome to the server. Type something and hit enter\n')  # send only takes string
 
-print "Binding Address and Port"
-HOST = 'localhost'
-PORT = 8888
-soc.bind((HOST, PORT))
+    # infinite loop so that function do not terminate and thread do not end.
+    while True:
+        initAuth = ''
+        # Receiving from client
+        data = ''
+        try:
+            data = conn.recv(1024)
+        except socket.error:
+            logging.info("Client disconnected.")
+            conn.close()
+        if not data:
+            break
 
-print ("Address: "+str(HOST)+" | Port: "+str(PORT))
-soc.listen(2)
+        print "Received: "+data
+        try:
+            initAuth = pickle.loads(data)
+            logging.info("Loaded data from the client: %s", initAuth)
+            sessKey = os.urandom(16)
+            logging.info("Generated random session key: %s", sessKey)
+            clientID = initAuth[0]
+            redirID = initAuth[1]
+            expire = initAuth[2]
+            nonce = initAuth[3]
+            clientRedirCiph = AES.new(KEYS[int(redirID)])
+            clientCiph = AES.new(KEYS[int(clientID)])
+            logging.info("Generated client cipher block: %s", clientRedirCiph)
+            passOn = [sessKey, clientID]
+            passOnEnc = encrypt(passOn, clientRedirCiph)
+            logging.info("Encrypted Kab, A with B key")
 
-print "Server Started\nListening..."
+            response = [nonce, sessKey, redirID, passOnEnc]
+            responseEnc = encrypt(response, clientCiph)
+            conn.sendall(pickle.dumps(responseEnc))
 
-# message = "test"
-# enc = encrypt(cipher, message)
-# print enc
-# dec = decrypt(cipher, enc)
-# print dec+"\n==================="
+        except IndexError:
+            logging.info("Non-auth. Rejected.")
 
-for i in range(2):
-    Thread(target=clienthandler).start()
+    # came out of loop
+    conn.close()
 
-soc.close()
+# now keep talking with the client
+while 1:
+    # wait to accept a connection - blocking call
+    conn, addr = s.accept()
+    print 'Connected with ' + addr[0] + ':' + str(addr[1])
 
+    # start new thread takes 1st argument as a function name to be run, second is the tuple of arguments to the function.
+    start_new_thread(clientthread, (conn,))
 
-
-
+s.close()
