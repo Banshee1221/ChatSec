@@ -21,10 +21,12 @@ class Client():
         self.IP = IP
         self.port = port
         connectTo = str(raw_input("Who: "))
-        self.authSrv(connectTo)
+        #self.authSrv(connectTo)
         self.listenOnly = listenOnly
-        if listenOnly is True:
-
+        if listenOnly is False:
+            start_new_thread(self.authSrv(connectTo))
+        else:
+            start_new_thread(self.chatListener())
 
 
     def authSrv(self, who):
