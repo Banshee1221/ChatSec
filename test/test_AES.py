@@ -1,7 +1,7 @@
 import pytest
 from AES import *
 
-testKey = "CE98BA1B84457DDF03592B4B64F07623"
+testKey = "\xeb\xb9\x90!\xa3d\x889\t\xb7)?:\xc9(\xa0"
 
 def test_padderEmpty():
 	m = ''
