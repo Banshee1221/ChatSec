@@ -23,6 +23,9 @@ class Client():
     cli_sock = None # 'client' type socket for sending messages to the server
     others = {} # clients currently listening for messages
     keyring = {} # session keys shared with other clients
+    # maybe combine others and keyring by making others[i] map to a dict with keys 'address' and 'key'
+    nonces = {} # nonces used for each client's session ('session nonces' used to check that both parties have the same key)
+    sec_nonces = {} # nonces only the server can see
     listenSock = '' # server socket for client listening to incoming client connections
     listenIP = ''
     listenPORT = ''
@@ -52,6 +55,7 @@ class Client():
         
         self.identify()
         self.menu()
+        self.cli_sock.close()
 
     def identify(self):
         uid = self.clientID
@@ -77,17 +81,24 @@ class Client():
             if choice == self.clientID:
                 print "You can't chat with yourself."
                 choice = False
-        dictRet = self.others[choice]
-        logging.info("Chosen %s", str(dictRet))
-        self.authCli(choice, dictRet['IP'], dictRet['PORT'])
+            dictRet = self.others[choice]
+            logging.info("Chosen %s", str(dictRet))
+            if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
+                print "Starting messaging"
+                # Enter messaging state here
+            else:
+                print "Authentication failed."
+                choice = False
 
     def authCli(self, cli_id, cli_ip, cli_port):
         # Send initial request to other client
         tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tmp_sock.connect((cli_ip, cli_port))
         logging.info("Connected to client %s", cli_id)
-        tmp_sock.sendall(cli_id)
-        logging.info("Sending the ID to the client")
+        init = {'type': 'new conn',
+                'uid': self.clientID}
+        tmp_sock.sendall(pickle.dumps(init))
+        logging.info("Sent ID to the target client")
         enc = tmp_sock.recv(1024)
         tmp_sock.close()
         logging.info("Info received from client: %s", enc.replace("\n", '').replace("\r", ''))
@@ -95,9 +106,36 @@ class Client():
         # Pass on package to the server, then send reply (with session key)
         # to the other client
         package = self.authSrv(cli_id, enc)
-        
+        if not package:
+            return False
+        toSend = {'type': 'new nonce',
+                  'package': package}
+        # Currently reconnecting manually, this should be done through a connect function
+        tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tmp_sock.connect((cli_ip, cli_port))
+        logging.info("Connected to client %s", cli_id)
+        tmp_sock.sendall(pickle.dumps(toSend))
+        logging.info("Sent session key to client %s at %s", cli_id, (cli_ip, cli_port))
 
-        logging.info("Reached the end")
+        # Confirm possession of session key by sending nonce + 1
+        incoming = tmp_sock.recv(1024)
+        tmp_sock.close()
+        tmp_cipher = AES.new(self.keyring[cli_id])
+        sessionNonce = decrypt(incoming, tmp_cipher) # note: encrypted nonce is sent alone, not in a dict
+        logging.info("Nonce received: %s", sessionNonce)
+        self.nonces[cli_id] = sessionNonce
+        nonce_conf = encrypt(sessionNonce+1, tmp_cipher)
+
+        tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tmp_sock.connect((cli_ip, cli_port))
+        logging.info("Connected to client %s", cli_id)
+        tmp_sock.sendall(pickle.dumps({'type': 'conf',
+                                       'uid': self.clientID,
+                                       'nonce': nonce_conf}))
+        tmp_sock.close()
+        logging.info("Sent modified nonce as confirmation")
+
+        return True
 
     def authSrv(self, who, encData):
         # Send request for session key to server
@@ -114,7 +152,7 @@ class Client():
         # Unpack session key and return package for other client
         recvEnc = self.cli_sock.recv(4096)
         logging.info("Received data from CA server: %s", recvEnc)
-        decr = pickle.loads(decrypt(recvEnc, AES.new(self.sharedKey)))
+        decr = decrypt(recvEnc, AES.new(self.sharedKey))
         logging.info("Decoded information from the CA serv: %s", decr)
         if decr['otheruid'] != who or decr['nonce'] != nonce:
             logging.info("Invalid reply from server")
@@ -137,18 +175,51 @@ class Client():
         self.listenSock.listen(5)        
 
     def listenToClients(self):
-        conn, addr = self.listenSock.accept()
-        logging.info("Connected with %s", addr)
         while True:
-            data = conn.recv(1024)
+            conn, addr = self.listenSock.accept()
+            logging.info("Connected with %s", addr)
+            data = pickle.loads(conn.recv(1024)) # <- Slightly insecure, could be used to load random crap I think. Rather handle this in a separate receive method
             if not data:
                 break
             logging.info("Received data: %s", data)
-            if data == self.clientID:
-                nonce = random.randrange(1, 100000000)
-                toSend = encrypt(pickle.dumps({'otheruid': data, 'nonce': nonce}), self.cipher)
+            if data['type'] == 'new conn':
+                # Another client is requesting a new connection
+                nonce = random.randrange(1, 100000000) # <- need to store this and check it later on (see below)
+                self.sec_nonces[data['uid']] = nonce
+                toSend = encrypt(pickle.dumps({'uid': data['uid'], 'nonce': nonce}), self.cipher)
                 logging.info("Sending information [%s] back to client", toSend)
                 conn.sendall(toSend)
+                logging.info("Encrypted info sent")
+            elif data['type'] == 'new nonce':
+                # Confirmation package from server, delivered by another client
+                # Add the session key to the keyring
+                package = decrypt(data['package'], self.cipher)
+                self.keyring[package['uid']] = package['sKey']
+
+                # check that the nonce is the same as the one initially sent
+                if self.sec_nonces[package['uid']] != package['nonce']:
+                    logging.info("Server's nonce was not fresh")
+                    continue
+                
+                # Send a confirmation nonce
+                cipher = AES.new(self.keyring[package['uid']])
+                nonce = random.randrange(1, 100000000)
+                self.nonces[package['uid']] = nonce
+                nonceEnc = encrypt(nonce, cipher)
+                conn.sendall(nonceEnc) # note: encrypted nonce is sent alone, not in a dict
+                logging.info("Session nonce sent")
+            elif data['type'] == 'conf':
+                tmp_cipher = AES.new(self.keyring[data['uid']])
+                nonce = decrypt(data['nonce'], tmp_cipher)
+                if nonce != self.nonces[data['uid']] + 1:
+                    logging("Confirmation nonce incorrect! connection rejected")
+                    continue
+                logging.info("Nonce confirmed. Starting messaging")
+                # Enter messaging state here
+            else:
+                logging.info("Message type not recognised")
+                continue
+
         conn.close()
     
     # TODO: Combine this with listenToClients

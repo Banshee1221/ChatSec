@@ -85,9 +85,11 @@ def clientthread(conn, addr):
                     continue
                 clientRedirCiph = AES.new(KEYS[otheruid])
                 decr = pickle.loads(decrypt(initAuth['enc'], clientRedirCiph))
-                if otheruid != decr['otheruid']:
+                logging.info("Decrypted B's package with type: %s", type(decr))
+                if clientID != decr['uid']:
                     logging.info("Target uid mismatch! Invalid request from uid %s to connect to %s", clientID, otheruid)
                 
+                # Generate new session key and package it for the other clients
                 sessKey = os.urandom(16)
                 logging.info("Generated random session key: %s", sessKey)
                 # expire = initAuth['expire']
@@ -101,8 +103,9 @@ def clientthread(conn, addr):
                             'sKey': sessKey,
                             'otheruid': otheruid,
                             'enc': passOnEnc}
-                responseEnc = encrypt(pickle.dumps(response), clientCiph)
+                responseEnc = encrypt(response, clientCiph)
                 conn.sendall(responseEnc)
+                logging.info("Sent response to client %s", clientID)
             else:
                 logging.info('Invalid message received: %s', initAuth)
 

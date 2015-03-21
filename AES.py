@@ -1,3 +1,4 @@
+import pickle
 from Crypto.Cipher import AES
 
 def padder(message):
@@ -17,7 +18,7 @@ def encrypt(plaintext, cipher):
     :return: Encrypted message based on the plaintext input
     """
     #serverCipher
-    return cipher.encrypt(padder(str(plaintext)))
+    return cipher.encrypt(padder(pickle.dumps(plaintext)))
 
 def decrypt(ciphertext, cipher):
     """
@@ -27,4 +28,5 @@ def decrypt(ciphertext, cipher):
     """
     dec = cipher.decrypt(ciphertext)
     l = dec.count(b'\x06')
-    return dec[:len(dec) - l]
+    dec = dec[:len(dec) - l]
+    return pickle.loads(dec)
