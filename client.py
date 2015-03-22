@@ -77,7 +77,7 @@ class Client():
         choice = False
         while not choice:
             if self.chatLock.locked():
-                # logging.info("LOCK1 FOUND")
+                logging.debug("LOCK1 FOUND")
                 time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
@@ -85,7 +85,7 @@ class Client():
                 print each
             choice = str(raw_input(":: "))
             if self.chatLock.locked():
-                # logging.info("LOCK2 FOUND")
+                logging.debug("LOCK2 FOUND")
                 choice = False
                 continue
             if choice not in self.others:
