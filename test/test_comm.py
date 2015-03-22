@@ -2,12 +2,11 @@ import sys
 import logging
 import cPickle
 import socket
-
 import pytest
-
+sys.path.insert(0, 'src/')
 from comm import *
-
 # Number of tests: 8
+
 
 test_addr = ('localhost', 0)
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
