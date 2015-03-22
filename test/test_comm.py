@@ -145,11 +145,14 @@ def test_receiveError():
     conn.close()
     assert receive(conn) == False
 
+
+# variable-length messages
 def test_sendVarMessage():
     s = setupListen()
     data = open('5mb.jpg', 'rb')
     toSend = data.readlines()
     send_var_message(s['socket'], toSend)
+
 
 def test_recVarMessage():
     s = setupListen()
