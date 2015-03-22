@@ -1,4 +1,4 @@
-import pickle
+import cPickle
 from Crypto.Cipher import AES
 
 def padder(message):
@@ -27,7 +27,7 @@ def encrypt(plaintext, cipher):
     :param plaintext: Plaintext message to be encrypted
     :return: Encrypted message based on the plaintext input
     """
-    return cipher.encrypt(padder(pickle.dumps(plaintext)))
+    return cipher.encrypt(padder(cPickle.dumps(plaintext)))
 
 def decrypt(ciphertext, cipher):
     """
@@ -35,4 +35,4 @@ def decrypt(ciphertext, cipher):
     :param ciphertext: Ciphertext message based on the same cipher key
     :return: The decrypted plaintext message
     """
-    return pickle.loads(unpadder(cipher.decrypt(ciphertext)))
+    return cPickle.loads(unpadder(cipher.decrypt(ciphertext)))

@@ -1,6 +1,6 @@
 import pytest
 from AES import *
-
+# Number of tests: 6
 testKey = "\xeb\xb9\x90!\xa3d\x889\t\xb7)?:\xc9(\xa0"
 
 def test_padderEmpty():
