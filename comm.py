@@ -45,9 +45,8 @@ def receive(sock):
     rec = False
     try:
         rec = sock.recv(4096)
-    except:
-        error = sys.exc_info()[0]
-        logging.info("Error receiving message: %s", error)
+    except socket.error:
+        logging.info("Error receiving message: %s", socket.error.strerror)
         return False
     if rec:
         logging.info("Received %s", rec)
