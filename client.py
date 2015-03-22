@@ -37,9 +37,6 @@ class Client():
         self.IP = IP
         self.port = port
         self.listenOnly = listenOnly
-        # self.authSrv(connectTo)
-        # start_new_thread(self.authSrv, connectTo)
-        self.run()
         
     def run(self):
         # Binding own port and connecting to server
@@ -49,7 +46,9 @@ class Client():
         print "Success! Connected to server"
         
         # ensure that listenSock is set up before identify sends socket info to the server
-        self.setupListen() 
+        setup = self.setupListen(('127.0.0.1', 0))
+        self.listenSock = setup['sock']
+        self.listenIP, self.listenPORT = setup['address']
         start_new_thread(self.listenToClients, ())
         print "Self-listening started"
         
@@ -86,6 +85,7 @@ class Client():
             if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
                 print "Starting messaging"
                 # Enter messaging state here
+                # self.chat()
             else:
                 print "Authentication failed."
                 choice = False
@@ -164,15 +164,19 @@ class Client():
     def send(self, msg):
         self.cli_sock.sendall(msg)
 
-    def setupListen(self):
-        self.listenSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.listenSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # <- must be called before bind
-        self.listenSock.bind(("127.0.0.1", 0))
-        temp = self.listenSock.getsockname()
-        print "Binding socket: " + str(temp)
-        self.listenIP = temp[0]
-        self.listenPORT = temp[1]
-        self.listenSock.listen(5)        
+    def setupListen(self, address):
+        """Sets up a socket to listen for messages at the given ip/port pair.
+        :return: A dictionary with the listening socket and its ip and port"""
+        lSoc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        lSoc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # <- must be called before bind
+        lSoc.bind(address)
+        temp = lSoc.getsockname()
+        logging.info("Binding socket: %s", str(temp))
+        # ip = temp[0]
+        # port = temp[1]
+        lSoc.listen(5)        
+        return {'sock': lSoc,
+                'address': temp}
 
     def listenToClients(self):
         while True:
@@ -216,14 +220,15 @@ class Client():
                     continue
                 logging.info("Nonce confirmed. Starting messaging")
                 # Enter messaging state here
+                # self.chat()
             else:
                 logging.info("Message type not recognised")
                 continue
 
         conn.close()
     
-    # TODO: Combine this with listenToClients
-    def chatListener(self):
+    # TODO: use this for the messaging state
+    def chat(self):
         logging.info('Listening for info')
         conn, addr = self.listenSock.accept()
         logging.info('Received connection: %s, address: %s', conn, addr)
