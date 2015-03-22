@@ -2,7 +2,6 @@ __author__ = 'Eugene'
 
 import socket
 import random
-import pickle
 import logging
 import sys
 import time
@@ -15,14 +14,12 @@ from comm import *
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
-
 class Client():
     ID = 0
     server_ip = 0
     port = 0
 
     sharedKey = 0 # key pre-shared with the server
-    cipher = '' # AES cipher for server messages
     cli_sock = None # 'client' type socket for sending messages to the server
 
     others = {} # addresses of clients currently listening for messages
@@ -41,7 +38,6 @@ class Client():
     def __init__(self, ID, key, server_ip, server_port):
         self.ID = ID
         self.sharedKey = key
-        self.cipher = AES.new(self.sharedKey)
         self.server_ip = server_ip
         self.server_port = server_port
         
@@ -65,7 +61,7 @@ class Client():
 
     def identify(self):
         uid = self.ID
-        idEnc = encrypt(uid, self.cipher)
+        idEnc = encrypt(uid, self.sharedKey)
         payload = {'type': 'new conn',
                    'uid': uid,
                    'ip': self.listenIP,
@@ -137,11 +133,10 @@ class Client():
         # Confirm possession of session key by sending nonce + 1
         incoming = receive(tmp_sock)
         tmp_sock.close()
-        tmp_cipher = AES.new(self.keyring[cli_id])
-        sessionNonce = decrypt(incoming, tmp_cipher) # note: encrypted nonce is sent alone, not in a dict
+        sessionNonce = decrypt(incoming, self.keyring[cli_id]) # note: encrypted nonce is sent alone, not in a dict
         logging.info("Nonce received: %s", sessionNonce)
         self.nonces[cli_id] = sessionNonce
-        nonce_conf = encrypt(sessionNonce+1, tmp_cipher)
+        nonce_conf = encrypt(sessionNonce+1, self.keyring[cli_id])
 
         conf = {'type': 'conf',
                 'uid': self.ID,
@@ -170,7 +165,7 @@ class Client():
         # Unpack session key and return package for other client
         recvEnc = receive(self.cli_sock)
         logging.info("Received data from CA server: %s", recvEnc)
-        decr = decrypt(recvEnc, AES.new(self.sharedKey))
+        decr = decrypt(recvEnc, self.sharedKey)
         logging.info("Decoded information from the CA serv: %s", decr)
         if decr['otheruid'] != who or decr['nonce'] != nonce:
             logging.info("Invalid reply from server")
@@ -209,15 +204,15 @@ class Client():
                     # throw away irrelevant messages
                     if data['type'] != 'msg' and data['type'] != 'file':
                         logging.info("Chat already in progress, not listening to new clients")
+                        # TODO: add reply to third party: busy
                         break
                     
                     logging.info("Received chat message: %s", data)
-                    cipher = AES.new(self.keyring[self.chatUID])
-                    msg = decrypt(data['data'], cipher)
+                    msg = decrypt(data['data'], self.keyring[self.chatUID])
                     print ">>", msg
                     data = receive(conn)
-                        
-                self.chatLock.release()
+                if self.chatLock.locked():
+                    self.chatLock.release()
                 continue
 
             if not data:
@@ -229,8 +224,8 @@ class Client():
                 # Another client is requesting a new connection
                 nonce = random.randrange(1, 100000000) # <- this is checked later on (see below)
                 self.sec_nonces[data['uid']] = nonce
-                toSend = encrypt(pickle.dumps({'uid': data['uid'],
-                                               'nonce': nonce}), self.cipher)
+                toSend = encrypt({'uid': data['uid'],
+                                  'nonce': nonce}, self.sharedKey)
                 logging.info("Sending information [%s] back to client", toSend)
                 send(toSend, conn)
                 logging.info("Encrypted info sent")
@@ -238,7 +233,7 @@ class Client():
             elif data['type'] == 'new nonce':
                 # Confirmation package from server, delivered by another client
                 # Add the session key to the keyring
-                package = decrypt(data['package'], self.cipher)
+                package = decrypt(data['package'], self.sharedKey)
                 self.keyring[package['uid']] = package['sKey']
 
                 # check that the nonce is the same as the one initially sent
@@ -247,16 +242,14 @@ class Client():
                     continue
 
                 # Send a confirmation nonce
-                cipher = AES.new(self.keyring[package['uid']])
                 nonce = random.randrange(1, 100000000)
                 self.nonces[package['uid']] = nonce
-                nonceEnc = encrypt(nonce, cipher)
+                nonceEnc = encrypt(nonce, self.keyring[package['uid']])
                 send(nonceEnc, conn) # note: encrypted nonce is sent alone, not in a dict
                 logging.info("Session nonce sent")
             
             elif data['type'] == 'conf':
-                tmp_cipher = AES.new(self.keyring[data['uid']])
-                nonce = decrypt(data['nonce'], tmp_cipher)
+                nonce = decrypt(data['nonce'], self.keyring[data['uid']])
                 if nonce != self.nonces[data['uid']] + 1:
                     logging("Confirmation nonce incorrect! connection rejected")
                     continue
@@ -269,7 +262,7 @@ class Client():
 
             elif data['type'] == 'clients':
                 logging.info("Received new connection list from server")
-                self.others = decrypt(data['data'], self.cipher)
+                self.others = decrypt(data['data'], self.sharedKey)
                 print "\nConnected clients updated:"
                 for each in self.others:
                     print each
@@ -294,7 +287,6 @@ class Client():
             logging.info("Error connecting to other client for chat!")
             return False
 
-        cli_cipher = AES.new(self.keyring[self.chatUID])
         m = ''
         logging.info("Entering messaging loop")
         while m != ':q':
@@ -303,7 +295,7 @@ class Client():
             if not self.chatLock.locked():
                 print "Other client disconnected."
                 break
-            mEnc = encrypt(m, cli_cipher)
+            mEnc = encrypt(m, self.keyring[self.chatUID])
             toSend = {'type': 'msg',
                       'data': mEnc}
             send(toSend, conn)

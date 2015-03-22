@@ -1,7 +1,6 @@
 import socket
 import sys
 from thread import *
-import pickle
 import logging
 import os
 
@@ -25,8 +24,7 @@ def broadcast(msg, new_client):
         # skip the newly connected client - it's handled separately
         if client == new_client:
             continue
-        cipher = AES.new(KEYS[client])
-        clients_enc = encrypt(CLIENTS, cipher)
+        clients_enc = encrypt(CLIENTS, KEYS[client])
         msg = {'type': 'clients',
                'data': clients_enc}
         conn = connect(CLIENTS[client])
@@ -61,8 +59,7 @@ def clientthread(conn, addr):
                     logging.info("User already in connected list")
                 else:
                     logging.info("Client incoming, checking validity")
-                    tempCiph = AES.new(KEYS[str(initAuth['uid'])])
-                    checker = decrypt(initAuth['encuid'], tempCiph)
+                    checker = decrypt(initAuth['encuid'], KEYS[initAuth['uid']])
                     if str(checker) == str(initAuth['uid']):
                         logging.info("User validated!")
                     else:
@@ -78,15 +75,15 @@ def clientthread(conn, addr):
             elif initAuth['type'] == 'session':
                 # Respond with a new session key
                 logging.info("Loaded data from the client: %s", initAuth)
-                # Verify the target client
                 clientID = initAuth['uid']
                 otheruid = initAuth['otheruid']
                 nonce = initAuth['nonce']
+
+                # Verify the target client
                 if otheruid not in KEYS:
                     logging.info("No key for client %s", otheruid)
                     continue
-                clientRedirCiph = AES.new(KEYS[otheruid])
-                decr = pickle.loads(decrypt(initAuth['enc'], clientRedirCiph))
+                decr = decrypt(initAuth['enc'], KEYS[otheruid])
                 logging.info("Decrypted B's package with type: %s", type(decr))
                 if clientID != decr['uid']:
                     logging.info("Target uid mismatch! Invalid request from uid %s to connect to %s", clientID, otheruid)
@@ -94,18 +91,16 @@ def clientthread(conn, addr):
                 # Generate new session key and package it for the other clients
                 sessKey = os.urandom(16)
                 logging.info("Generated random session key: %s", sessKey)
-                # expire = initAuth['expire']
-                clientCiph = AES.new(KEYS[clientID])
-                logging.info("Generated client cipher block: %s", clientRedirCiph)
                 passOn = {'sKey': sessKey, 'uid': clientID, 'nonce': decr['nonce']}
-                passOnEnc = encrypt(passOn, clientRedirCiph)
-                logging.info("Encrypted Kab, A and nonce of B with B's key")
+                passOnEnc = encrypt(passOn, KEYS[otheruid])
+                logging.info("Encrypted session key, uid of A and nonce of B with B's key")
 
                 response = {'nonce': nonce,
                             'sKey': sessKey,
                             'otheruid': otheruid,
                             'enc': passOnEnc}
-                responseEnc = encrypt(response, clientCiph)
+                responseEnc = encrypt(response, KEYS[clientID])
+                logging.info("Sending response to client: %s", responseEnc)
                 send(responseEnc, conn)
                 logging.info("Sent response to client %s", clientID)
             else:
