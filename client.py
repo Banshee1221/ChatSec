@@ -9,45 +9,45 @@ from thread import *
 import threading
 from Crypto.Cipher import AES
 from AES import *
+from comm import *
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 
 class Client():
-    clientID = 0
+    ID = 0
+    server_ip = 0
+    port = 0
+
     sharedKey = 0 # key pre-shared with the server
     cipher = '' # AES cipher for server messages
-    IP = 0
-    port = 0
-    listenOnly = False
     cli_sock = None # 'client' type socket for sending messages to the server
-    others = {} # clients currently listening for messages
+
+    others = {} # addresses of clients currently listening for messages
     keyring = {} # session keys shared with other clients
     # maybe combine others and keyring by making others[i] map to a dict with keys 'address' and 'key'
     nonces = {} # nonces used for each client's session ('session nonces' used to check that both parties have the same key)
-    sec_nonces = {} # nonces only the server can see
+    sec_nonces = {} # nonces sent securely to the server can see
+    
     listenSock = '' # server socket for client listening to incoming client connections
     listenIP = ''
     listenPORT = ''
-    threads = []
-    chatFlag = False
-    clientConn = ''
-    clientAddr = ''
 
-    def __init__(self, ID, key, IP, port, listenOnly=False):
-        self.clientID = ID
+    chatLock = allocate_lock()
+    chatUID = ''
+
+    def __init__(self, ID, key, server_ip, server_port):
+        self.ID = ID
         self.sharedKey = key
         self.cipher = AES.new(self.sharedKey)
-        self.IP = IP
-        self.port = port
-        self.listenOnly = listenOnly
+        self.server_ip = server_ip
+        self.server_port = server_port
         
     def run(self):
         # Binding own port and connecting to server
-        self.cli_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print "Connecting to server with IP: " + str(self.IP) + ", PORT: " + str(self.port)
-        self.cli_sock.connect((self.IP, self.port))
+        print "Connecting to server with IP: " + str(self.server_ip) + ", PORT: " + str(self.server_port)
+        self.cli_sock = connect((self.server_ip, self.server_port))
         print "Success! Connected to server"
 
         # ensure that listenSock is set up before identify sends socket info to the server
@@ -63,17 +63,20 @@ class Client():
         self.cli_sock.close()
 
     def identify(self):
-        uid = self.clientID
+        uid = self.ID
         idEnc = encrypt(uid, self.cipher)
         payload = {'type': 'new conn',
                    'uid': uid,
                    'ip': self.listenIP,
                    'port': self.listenPORT,
                    'encuid': idEnc}
-        self.send(pickle.dumps(payload)) # TODO: encrypt IP and port num to combat dos
-        self.others = pickle.loads(self.cli_sock.recv(1024))
+        send(payload, self.cli_sock) # TODO: encrypt IP and port num to combat dos
+        self.others = receive(self.cli_sock)
 
     def menu(self):
+        if not self.others:
+            print "Server not available. Check connection."
+            exit()
         choice = False
         while not choice:
             print "\nSelect one of the following clients to chat to:"
@@ -83,41 +86,27 @@ class Client():
             if choice not in self.others:
                 print "That client is not connected."
                 choice = False
-            if choice == self.clientID:
+            if choice == self.ID:
                 print "You can't chat with yourself."
                 choice = False
-            dictRet = self.others[choice]
-            logging.info("Chosen %s", str(dictRet))
-            if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
+            address = self.others[choice]
+            logging.info("Chosen %s", str(address))
+            if self.authCli(choice, address[0], address[1]):
                 print "Starting messaging"
-                # Enter messaging state here
-                # self.chat()
+                choice = self.chat()
             else:
-                if choice not in self.others:
-                    print "That client is not connected."
-                    choice = False
-                if choice == self.clientID:
-                    print "You can't chat with yourself."
-                    choice = False
-                dictRet = self.others[choice]
-                logging.info("Chosen %s", str(dictRet))
-                if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
-                    print "Starting messaging"
-                    threading.Thread(target=self.sender) # Trying to establish conn to send and receive messages here
-                else:
-                    print "Authentication failed."
-                    choice = False
+                print "Authentication failed."
+                choice = False
 
     def authCli(self, cli_id, cli_ip, cli_port):
         # Send initial request to other client
-        tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tmp_sock.connect((cli_ip, cli_port))
+        tmp_sock = connect((cli_ip, cli_port))
         logging.info("Connected to client %s", cli_id)
         init = {'type': 'new conn',
-                'uid': self.clientID}
-        tmp_sock.sendall(pickle.dumps(init))
+                'uid': self.ID}
+        send(init, tmp_sock)
         logging.info("Sent ID to the target client")
-        enc = tmp_sock.recv(1024)
+        enc = receive(tmp_sock)
         tmp_sock.close()
         logging.info("Info received from client: %s", enc.replace("\n", '').replace("\r", ''))
 
@@ -129,14 +118,13 @@ class Client():
         toSend = {'type': 'new nonce',
                   'package': package}
         # Currently reconnecting manually, this should be done through a connect function
-        tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tmp_sock.connect((cli_ip, cli_port))
+        tmp_sock = connect((cli_ip, cli_port))
         logging.info("Connected to client %s", cli_id)
-        tmp_sock.sendall(pickle.dumps(toSend))
+        send(toSend, tmp_sock)
         logging.info("Sent session key to client %s at %s", cli_id, (cli_ip, cli_port))
 
         # Confirm possession of session key by sending nonce + 1
-        incoming = tmp_sock.recv(1024)
+        incoming = receive(tmp_sock)
         tmp_sock.close()
         tmp_cipher = AES.new(self.keyring[cli_id])
         sessionNonce = decrypt(incoming, tmp_cipher) # note: encrypted nonce is sent alone, not in a dict
@@ -144,13 +132,14 @@ class Client():
         self.nonces[cli_id] = sessionNonce
         nonce_conf = encrypt(sessionNonce+1, tmp_cipher)
 
-        tmp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tmp_sock.connect((cli_ip, cli_port))
+        tmp_sock = connect((cli_ip, cli_port))
         logging.info("Connected to client %s", cli_id)
-        tmp_sock.sendall(pickle.dumps({'type': 'conf',
-                                       'uid': self.clientID,
-                                       'nonce': nonce_conf}))
+        conf = {'type': 'conf',
+                'uid': self.ID,
+                'nonce': nonce_conf}
+        send(conf, tmp_sock)
         tmp_sock.close()
+        self.chatUID = cli_id
         logging.info("Sent modified nonce as confirmation")
 
         return True
@@ -159,16 +148,16 @@ class Client():
         # Send request for session key to server
         nonce = random.randrange(1, 100000000)
         # expiry = 50000
-        packet = pickle.dumps({'type': 'session',
-                               'uid': self.clientID,
-                               'otheruid': who,
-                               'nonce': nonce,
-                               'enc': encData})
-        self.send(packet)
+        packet = {'type': 'session',
+                  'uid': self.ID,
+                  'otheruid': who,
+                  'nonce': nonce,
+                  'enc': encData}
+        send(packet, self.cli_sock)
         logging.info("Sent request to server")
 
         # Unpack session key and return package for other client
-        recvEnc = self.cli_sock.recv(4096)
+        recvEnc = receive(self.cli_sock)
         logging.info("Received data from CA server: %s", recvEnc)
         decr = decrypt(recvEnc, AES.new(self.sharedKey))
         logging.info("Decoded information from the CA serv: %s", decr)
@@ -179,8 +168,8 @@ class Client():
 
         return decr['enc']
 
-    def send(self, msg):
-        self.cli_sock.sendall(msg)
+    # def send(self, msg):
+    #     self.cli_sock.sendall(msg)
 
     def setupListen(self, address):
         """Sets up a socket to listen for messages at the given ip/port pair.
@@ -199,20 +188,30 @@ class Client():
     def listenToClients(self):
         while True:
             conn, addr = self.listenSock.accept()
-            self.clientConn, self.ClientAddr = conn, addr
             logging.info("Incoming connection with %s", addr)
-            data = pickle.loads(conn.recv(1024)) # <- Slightly insecure, could be used to load random crap I think. Rather handle this in a separate receive method
+            data = receive(conn) # <- Slightly insecure, could be used to load random crap I think. Rather handle this in a separate receive method
+
+            if self.chatLock.locked():
+                if data['type'] != 'msg' and data['type'] != 'file':
+                    logging.info("Chat already in progress, not listening to new clients")
+                    continue
+                logging.info("Received chat message: %s", data)
+                if not data:
+                    chatLock.release()
+                    continue
+
             if not data:
-                break
+                continue
+
             logging.info("Received data: %s", data)
             if data['type'] == 'new conn':
                 self.chatFlag = True
                 # Another client is requesting a new connection
-                nonce = random.randrange(1, 100000000) # <- need to store this and check it later on (see below)
+                nonce = random.randrange(1, 100000000) # <- this is checked later on (see below)
                 self.sec_nonces[data['uid']] = nonce
                 toSend = encrypt(pickle.dumps({'uid': data['uid'], 'nonce': nonce}), self.cipher)
                 logging.info("Sending information [%s] back to client", toSend)
-                conn.sendall(toSend)
+                send(toSend, conn)
                 logging.info("Encrypted info sent")
             elif data['type'] == 'new nonce':
                 # Confirmation package from server, delivered by another client
@@ -230,7 +229,7 @@ class Client():
                 nonce = random.randrange(1, 100000000)
                 self.nonces[package['uid']] = nonce
                 nonceEnc = encrypt(nonce, cipher)
-                conn.sendall(nonceEnc) # note: encrypted nonce is sent alone, not in a dict
+                send(nonceEnc, conn) # note: encrypted nonce is sent alone, not in a dict
                 logging.info("Session nonce sent")
             elif data['type'] == 'conf':
                 tmp_cipher = AES.new(self.keyring[data['uid']])
@@ -239,9 +238,10 @@ class Client():
                     logging("Confirmation nonce incorrect! connection rejected")
                     continue
                 logging.info("Nonce confirmed. Starting messaging")
-                threading.Thread(target=self.receiver) # Start the listener that is supposed to return messages
+                # threading.Thread(target=self.receiver) # Start the listener that is supposed to return messages
+                self.chatUID = data['uid']
                 # Enter messaging state here
-                # self.chat()
+                self.chat()
             else:
                 logging.info("Message type not recognised")
                 continue
@@ -250,17 +250,24 @@ class Client():
 
     # TODO: use this for the messaging state
     def chat(self):
-        logging.info('Listening for info')
-        conn, addr = self.listenSock.accept()
-        logging.info('Received connection: %s, address: %s', conn, addr)
-        while True:
-            toSend = str(raw_input())
-            conn.sendall(toSend)
-        conn.close()
+        """ Used to send messages to the other client
+        :return: True if the user indicates that they want to exit,
+                 False if they want to chat to someone else"""
+        # Stop the listener thread from processing anything else
+        logging.info("Acquiring chat lock")
+        self.chatLock.acquire()
+        conn = connect(self.others[self.chatUID])
+        if not conn:
+            loggging.info("Error connecting to other client for chat!")
+            return False
 
-    def receiver(self):
-        conn, addr = self.clientConn, self.clientAddr
-        logging.info('Established to: %s, address: %s for listening', conn, addr)
-        while True:
-            print conn.recv(4096)
-        conn.close()
+        cli_cipher = AES.new(self.keyring[self.chatUID])
+        m = ''
+        while m != ':q':
+            m = raw_input("Enter a message (':q' to quit'):")
+            mEnc = encrypt(m, cli_cipher)
+            send(mEnc, conn)
+        self.chatLock.release()
+
+    def receiver(self, msg):
+        pass

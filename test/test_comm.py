@@ -2,7 +2,7 @@ import pytest
 import sys
 import logging
 import cPickle
-from socket import *
+import socket
 from comm import *
 # Number of tests: 8
 
@@ -11,8 +11,8 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 # logging doesn't display in test output
 
 def setupListen():
-	l = socket(AF_INET, SOCK_STREAM)
-	l.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+	l = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	l.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	l.bind(test_addr)
 	l.listen(5)
 	return {'socket': l,
@@ -83,6 +83,7 @@ def check_message_received(msg):
 	conn, addr = s['socket'].accept()
 	recv = receive(conn)
 	assert recv == msg
+	assert type(recv) == type(msg)
 
 def test_receiveStringEmpty():
 	m = ""

@@ -8,6 +8,7 @@ import os
 from Crypto.Cipher import AES
 
 from AES import *
+from comm import *
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -17,35 +18,15 @@ CLIENTS = {}
 KEYS = {'1': '(e\xd0\t\xacn\xa8k}\xbe\x80s)>m\x83', '2': '({l\xa8\xee\x00\xf0\xe6b\xb8\n\x96\xb8\xcc\xd20',
         '3': '\xbaB\x80\x96\x84\x15*\x1b\x0e\xc9\xbb\xbdF~\x8a9'}
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # <- must be called before bind
-print 'Socket created'
-
-# Bind socket to local host and port
-try:
-    s.bind((HOST, PORT))
-except socket.error as msg:
-    print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message: ' + msg[1]
-    sys.exit()
-
-print 'Socket bind complete'
-
-# Start listening on socket
-s.listen(10)
-print 'Socket now listening'
-
-# Function for handling connections. This will be used to create threads
 def clientthread(conn, addr):
     # Sending message to connected client
-    # conn.send('Welcome to the server. Type something and hit enter\n')  # send only takes string
-
     # infinite loop so that function do not terminate and thread do not end.
     while True:
         initAuth = ''
         # Receiving from client
         data = ''
         try:
-            data = conn.recv(4096)
+            data = receive(conn)
         except socket.error:
             logging.info("Client at %s disconnected with socket error.", addr)
             conn.close()
@@ -53,9 +34,9 @@ def clientthread(conn, addr):
             logging.info("Client at %s closed.", addr)
             break
 
-        print "Received: " + data.replace('\n', '').replace('\r', '')
+        logging.info("Received: %s", data)
         try:
-            initAuth = pickle.loads(data)
+            initAuth = data
             logging.info("Loaded data: %s", initAuth)
             if initAuth['type'] == 'new conn':
                 # Authenticate the client with the server
@@ -71,10 +52,10 @@ def clientthread(conn, addr):
                         logging.info("ISSUES! WRONG USER!")
                         continue
                     logging.info("Incoming dict: %s", initAuth)
-                    CLIENTS[str(initAuth['uid'])] = {'IP': initAuth['ip'], 'PORT': int(initAuth['port'])}
+                    CLIENTS[str(initAuth['uid'])] = (initAuth['ip'], int(initAuth['port']))
                     logging.info("Added user %s to the connected list with ip: %s, port: %s", str(initAuth['uid']),
                                  str(initAuth['ip']), initAuth['port'])
-                    conn.sendall(pickle.dumps(CLIENTS)) # need to work out how to broadcast this. Maybe encrypt before sending
+                    send(CLIENTS, conn) # need to work out how to broadcast this. Maybe encrypt before sending
             elif initAuth['type'] == 'session':
                 # Respond with a new session key
                 logging.info("Loaded data from the client: %s", initAuth)
@@ -106,7 +87,7 @@ def clientthread(conn, addr):
                             'otheruid': otheruid,
                             'enc': passOnEnc}
                 responseEnc = encrypt(response, clientCiph)
-                conn.sendall(responseEnc)
+                send(responseEnc, conn)
                 logging.info("Sent response to client %s", clientID)
             else:
                 logging.info('Invalid message received: %s', initAuth)
@@ -116,6 +97,23 @@ def clientthread(conn, addr):
 
     # came out of loop
     conn.close()
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # <- must be called before bind
+print 'Socket created'
+
+# Bind socket to local host and port
+try:
+    s.bind((HOST, PORT))
+except socket.error as msg:
+    print 'Bind failed. Error Code : ' + str(msg[0]) + ' Message: ' + msg[1]
+    sys.exit()
+
+print 'Socket bind complete'
+
+# Start listening on socket
+s.listen(10)
+print 'Socket now listening'
 
 # now keep talking with the client
 while 1:
@@ -127,3 +125,5 @@ while 1:
     start_new_thread(clientthread, (conn,addr))
 
 s.close()
+
+# Function for handling connections. This will be used to create threads
