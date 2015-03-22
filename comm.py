@@ -2,6 +2,7 @@ import socket
 import logging
 import cPickle
 import sys
+import struct
 
 
 def connect(address_pair):
@@ -54,3 +55,38 @@ def receive(sock):
         logging.info("Loaded content: %s", msg)
         return msg
     return False
+
+
+def send_one_message(sock, data):
+    """
+    Sends the length of the data to be sent, as well as the actual data.
+    :return: None
+    """
+    datalen = len(data)
+    sock.sendall(struct.pack('!I', datalen))
+    sock.sendall(data)
+
+
+def recv_one_message(sock):
+    """
+    Receives the length of the data to be sent from the server and passes it to recvall.
+    :return: recvall
+    """
+    bufferlen = recvall(sock, 4)
+    datalen, = struct.unpack('!I', bufferlen)
+    return recvall(sock, datalen)
+
+
+def recvall(sock, count):
+    """
+    Reads the data part by part and reconstructs it.
+    :return: None or the content of the data
+    """
+    buff = b''
+    while count:
+        newbuff = sock.recv(count)
+        if not newbuff:
+            return None
+        buff += newbuff
+        count -= len(newbuff)
+    return buff
