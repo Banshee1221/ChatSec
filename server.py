@@ -106,9 +106,11 @@ def clientthread(conn, addr):
             
             elif initAuth['type'] == 'dc':
                 # client allegedly disconnecting
+                logging.info("Trying to disconnect client with uid %s", initAuth['uid'])
                 uid = decrypt(initAuth['encuid'], KEYS[initAuth['uid']])
                 if uid == initAuth['uid']:
                     del CLIENTS[uid]
+                    logging.info("Disconnected client with uid %s", uid)
             
             else:
                 logging.info('Invalid message received: %s', initAuth)
