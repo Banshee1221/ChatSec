@@ -11,13 +11,22 @@ def padder(message):
         return message
     return message + ((16-len(message) % 16) * b'\x06')
 
+def unpadder(decr):
+    """
+    Undoes the padding applied to a message.
+    :param decr: The decrypted message.
+    :return: The message stripped of padding
+    """
+    l = decr.count(b'\x06')
+    decr = decr[:len(decr) - l]
+    return decr
+
 def encrypt(plaintext, cipher):
     """
     Encrypts the plaintext message.
     :param plaintext: Plaintext message to be encrypted
     :return: Encrypted message based on the plaintext input
     """
-    #serverCipher
     return cipher.encrypt(padder(pickle.dumps(plaintext)))
 
 def decrypt(ciphertext, cipher):
@@ -26,7 +35,4 @@ def decrypt(ciphertext, cipher):
     :param ciphertext: Ciphertext message based on the same cipher key
     :return: The decrypted plaintext message
     """
-    dec = cipher.decrypt(ciphertext)
-    l = dec.count(b'\x06')
-    dec = dec[:len(dec) - l]
-    return pickle.loads(dec)
+    return pickle.loads(unpadder(cipher.decrypt(ciphertext)))

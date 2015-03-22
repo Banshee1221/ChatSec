@@ -58,6 +58,7 @@ def clientthread(conn, addr):
             initAuth = pickle.loads(data)
             logging.info("Loaded data: %s", initAuth)
             if initAuth['type'] == 'new conn':
+                # Authenticate the client with the server
                 if str(initAuth['uid']) in CLIENTS:
                     logging.info("User already in connected list")
                 else:
@@ -75,6 +76,7 @@ def clientthread(conn, addr):
                                  str(initAuth['ip']), initAuth['port'])
                     conn.sendall(pickle.dumps(CLIENTS)) # need to work out how to broadcast this. Maybe encrypt before sending
             elif initAuth['type'] == 'session':
+                # Respond with a new session key
                 logging.info("Loaded data from the client: %s", initAuth)
                 # Verify the target client
                 clientID = initAuth['uid']
