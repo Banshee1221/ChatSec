@@ -111,10 +111,10 @@ class Client():
 
     def authCli(self, cli_id, cli_ip, cli_port):
         # Send initial request to other client
-        tmp_sock = connect((cli_ip, cli_port))
-        logging.info("Connected to client %s", cli_id)
         init = {'type': 'new conn',
                 'uid': self.ID}
+        tmp_sock = connect((cli_ip, cli_port))
+        logging.info("Connected to client %s", cli_id)
         send(init, tmp_sock)
         logging.info("Sent ID to the target client")
         enc = receive(tmp_sock)
@@ -143,11 +143,11 @@ class Client():
         self.nonces[cli_id] = sessionNonce
         nonce_conf = encrypt(sessionNonce+1, tmp_cipher)
 
-        tmp_sock = connect((cli_ip, cli_port))
-        logging.info("Connected to client %s", cli_id)
         conf = {'type': 'conf',
                 'uid': self.ID,
                 'nonce': nonce_conf}
+        tmp_sock = connect((cli_ip, cli_port))
+        logging.info("Connected to client %s", cli_id)
         send(conf, tmp_sock)
         tmp_sock.close()
         self.chatUID = cli_id
@@ -196,23 +196,28 @@ class Client():
 
     def listenToClients(self):
         while True:
+            logging.info("Waiting for connection")
             conn, addr = self.listenSock.accept()
             logging.info("Incoming connection with %s", addr)
             data = receive(conn) # TODO: check receive for security
 
             if self.chatLock.locked():
-                # break out of message if other side closes
-                if not data:
-                    self.chatLock.release()
-                    continue
-                # throw away irrelevant messages
-                if data['type'] != 'msg' and data['type'] != 'file':
-                    logging.info("Chat already in progress, not listening to new clients")
-                    continue
-                logging.info("Received chat message: %s", data)
-                cipher = AES.new(self.keyring[self.chatUID])
-                msg = decrypt(data['data'], cipher)
-                print ">>", msg
+                while True:
+                    # break out of message if other side closes
+                    if not data:
+                        break
+                    # throw away irrelevant messages
+                    if data['type'] != 'msg' and data['type'] != 'file':
+                        logging.info("Chat already in progress, not listening to new clients")
+                        break
+                    
+                    logging.info("Received chat message: %s", data)
+                    cipher = AES.new(self.keyring[self.chatUID])
+                    msg = decrypt(data['data'], cipher)
+                    print ">>", msg
+                    data = receive(conn)
+                        
+                self.chatLock.release()
                 continue
 
             if not data:
@@ -260,7 +265,7 @@ class Client():
                 self.chatUID = data['uid']
                 # Enter messaging state here
                 print "Connected to client", data['uid'], " Press <ENTER> to continue"
-                self.chat()
+                start_new_thread(self.chat, ())
 
             elif data['type'] == 'clients':
                 logging.info("Received new connection list from server")
@@ -274,7 +279,7 @@ class Client():
                 logging.info("Message type not recognised")
                 continue
 
-            conn.close()
+        conn.close()
 
     # TODO: use this for the messaging state
     def chat(self):
@@ -302,6 +307,7 @@ class Client():
             toSend = {'type': 'msg',
                       'data': mEnc}
             send(toSend, conn)
+            logging.info("Message sent to other client")
         logging.info("Leaving chat")
         if self.chatLock.locked():
             self.chatLock.release()
