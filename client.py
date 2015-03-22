@@ -5,6 +5,7 @@ import random
 import pickle
 import logging
 import sys
+import time
 from thread import *
 import threading
 from Crypto.Cipher import AES
@@ -80,12 +81,16 @@ class Client():
         choice = False
         while not choice:
             if self.chatLock.locked():
+                # logging.info("LOCK1 FOUND")
+                time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
             for each in self.others:
                 print each
             choice = str(raw_input(":: "))
             if self.chatLock.locked():
+                # logging.info("LOCK2 FOUND")
+                choice = False
                 continue
             if choice not in self.others:
                 print "That client is not connected."
@@ -196,15 +201,19 @@ class Client():
             data = receive(conn) # TODO: check receive for security
 
             if self.chatLock.locked():
+                # break out of message if other side closes
+                if not data:
+                    self.chatLock.release()
+                    continue
                 # throw away irrelevant messages
                 if data['type'] != 'msg' and data['type'] != 'file':
                     logging.info("Chat already in progress, not listening to new clients")
                     continue
                 logging.info("Received chat message: %s", data)
-                # break out of message if other side closes
-                if not data:
-                    chatLock.release()
-                    continue
+                cipher = AES.new(self.keyring[self.chatUID])
+                msg = decrypt(data['data'], cipher)
+                print ">>", msg
+                continue
 
             if not data:
                 continue
@@ -250,6 +259,7 @@ class Client():
                 # threading.Thread(target=self.receiver) # Start the listener that is supposed to return messages
                 self.chatUID = data['uid']
                 # Enter messaging state here
+                print "Connected to client", data['uid'], " Press <ENTER> to continue"
                 self.chat()
 
             elif data['type'] == 'clients':
@@ -264,7 +274,7 @@ class Client():
                 logging.info("Message type not recognised")
                 continue
 
-        conn.close()
+            conn.close()
 
     # TODO: use this for the messaging state
     def chat(self):
@@ -276,7 +286,7 @@ class Client():
         self.chatLock.acquire()
         conn = connect(self.others[self.chatUID])
         if not conn:
-            loggging.info("Error connecting to other client for chat!")
+            logging.info("Error connecting to other client for chat!")
             return False
 
         cli_cipher = AES.new(self.keyring[self.chatUID])
@@ -285,10 +295,13 @@ class Client():
         while m != ':q':
             print "Enter a message (':q' to quit'):\n::",
             m = raw_input()
+            if not self.chatLock.locked():
+                print "Other client disconnected."
+                break
             mEnc = encrypt(m, cli_cipher)
-            send(mEnc, conn)
+            toSend = {'type': 'msg',
+                      'data': mEnc}
+            send(toSend, conn)
         logging.info("Leaving chat")
-        self.chatLock.release()
-
-    def receiver(self, msg):
-        pass
+        if self.chatLock.locked():
+            self.chatLock.release()
