@@ -54,8 +54,15 @@ class Client():
         start_new_thread(self.listenToClients, ())
         print "Self-listening started"
         
-        self.identify()
-        self.menu()
+        try:
+            self.identify()
+            self.menu()
+        except KeyboardInterrupt:
+            logging.info("User exiting. Sending notification to server")
+            uidEnc = encrypt(self.ID, self.sharedKey)
+            send({'type': 'dc',
+                  'uid': self.ID,
+                  'encuid': uidEnc}, self.cli_sock)
 
         self.cli_sock.close()
 
