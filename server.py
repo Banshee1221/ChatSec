@@ -18,6 +18,22 @@ CLIENTS = {}
 KEYS = {'1': '(e\xd0\t\xacn\xa8k}\xbe\x80s)>m\x83', '2': '({l\xa8\xee\x00\xf0\xe6b\xb8\n\x96\xb8\xcc\xd20',
         '3': '\xbaB\x80\x96\x84\x15*\x1b\x0e\xc9\xbb\xbdF~\x8a9'}
 
+def broadcast(msg, new_client):
+    """Send the encrypted clients list to all of the connected clients
+    :return: None"""
+    for client in CLIENTS:
+        # skip the newly connected client - it's handled separately
+        if client == new_client:
+            continue
+        cipher = AES.new(KEYS[client])
+        clients_enc = encrypt(CLIENTS, cipher)
+        msg = {'type': 'clients',
+               'data': clients_enc}
+        conn = connect(CLIENTS[client])
+        send(msg, conn)
+        conn.close()
+
+# Function for handling connections. This will be used to create threads
 def clientthread(conn, addr):
     # Sending message to connected client
     # infinite loop so that function do not terminate and thread do not end.
@@ -38,6 +54,7 @@ def clientthread(conn, addr):
         try:
             initAuth = data
             logging.info("Loaded data: %s", initAuth)
+            
             if initAuth['type'] == 'new conn':
                 # Authenticate the client with the server
                 if str(initAuth['uid']) in CLIENTS:
@@ -55,7 +72,9 @@ def clientthread(conn, addr):
                     CLIENTS[str(initAuth['uid'])] = (initAuth['ip'], int(initAuth['port']))
                     logging.info("Added user %s to the connected list with ip: %s, port: %s", str(initAuth['uid']),
                                  str(initAuth['ip']), initAuth['port'])
-                    send(CLIENTS, conn) # need to work out how to broadcast this. Maybe encrypt before sending
+                    send(CLIENTS, conn) # send reply to new clients separately
+                    broadcast(CLIENTS, initAuth['uid']) # <- focus here
+            
             elif initAuth['type'] == 'session':
                 # Respond with a new session key
                 logging.info("Loaded data from the client: %s", initAuth)
@@ -125,5 +144,3 @@ while 1:
     start_new_thread(clientthread, (conn,addr))
 
 s.close()
-
-# Function for handling connections. This will be used to create threads

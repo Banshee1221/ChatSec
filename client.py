@@ -71,7 +71,7 @@ class Client():
                    'port': self.listenPORT,
                    'encuid': idEnc}
         send(payload, self.cli_sock) # TODO: encrypt IP and port num to combat dos
-        self.others = receive(self.cli_sock)
+        self.others = receive(self.cli_sock) # <- TODO: put this in the listen thread
 
     def menu(self):
         if not self.others:
@@ -79,16 +79,22 @@ class Client():
             exit()
         choice = False
         while not choice:
+            if self.chatLock.locked():
+                continue
             print "\nSelect one of the following clients to chat to:"
             for each in self.others:
                 print each
             choice = str(raw_input(":: "))
+            if self.chatLock.locked():
+                continue
             if choice not in self.others:
                 print "That client is not connected."
                 choice = False
+                continue
             if choice == self.ID:
                 print "You can't chat with yourself."
                 choice = False
+                continue
             address = self.others[choice]
             logging.info("Chosen %s", str(address))
             if self.authCli(choice, address[0], address[1]):
@@ -178,9 +184,7 @@ class Client():
         lSoc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # <- must be called before bind
         lSoc.bind(address)
         temp = lSoc.getsockname()
-        logging.info("Binding socket: %s", str(temp))
-        # ip = temp[0]
-        # port = temp[1]
+        logging.info("Bound socket: %s", str(temp))
         lSoc.listen(5)        
         return {'sock': lSoc,
                 'address': temp}
@@ -189,13 +193,15 @@ class Client():
         while True:
             conn, addr = self.listenSock.accept()
             logging.info("Incoming connection with %s", addr)
-            data = receive(conn) # <- Slightly insecure, could be used to load random crap I think. Rather handle this in a separate receive method
+            data = receive(conn) # TODO: check receive for security
 
             if self.chatLock.locked():
+                # throw away irrelevant messages
                 if data['type'] != 'msg' and data['type'] != 'file':
                     logging.info("Chat already in progress, not listening to new clients")
                     continue
                 logging.info("Received chat message: %s", data)
+                # break out of message if other side closes
                 if not data:
                     chatLock.release()
                     continue
@@ -209,10 +215,12 @@ class Client():
                 # Another client is requesting a new connection
                 nonce = random.randrange(1, 100000000) # <- this is checked later on (see below)
                 self.sec_nonces[data['uid']] = nonce
-                toSend = encrypt(pickle.dumps({'uid': data['uid'], 'nonce': nonce}), self.cipher)
+                toSend = encrypt(pickle.dumps({'uid': data['uid'],
+                                               'nonce': nonce}), self.cipher)
                 logging.info("Sending information [%s] back to client", toSend)
                 send(toSend, conn)
                 logging.info("Encrypted info sent")
+            
             elif data['type'] == 'new nonce':
                 # Confirmation package from server, delivered by another client
                 # Add the session key to the keyring
@@ -231,6 +239,7 @@ class Client():
                 nonceEnc = encrypt(nonce, cipher)
                 send(nonceEnc, conn) # note: encrypted nonce is sent alone, not in a dict
                 logging.info("Session nonce sent")
+            
             elif data['type'] == 'conf':
                 tmp_cipher = AES.new(self.keyring[data['uid']])
                 nonce = decrypt(data['nonce'], tmp_cipher)
@@ -242,6 +251,15 @@ class Client():
                 self.chatUID = data['uid']
                 # Enter messaging state here
                 self.chat()
+
+            elif data['type'] == 'clients':
+                logging.info("Received new connection list from server")
+                self.others = decrypt(data['data'], self.cipher)
+                print "\nConnected clients updated:"
+                for each in self.others:
+                    print each
+                print "Select a new client:\n:: ",
+
             else:
                 logging.info("Message type not recognised")
                 continue
@@ -263,10 +281,13 @@ class Client():
 
         cli_cipher = AES.new(self.keyring[self.chatUID])
         m = ''
+        logging.info("Entering messaging loop")
         while m != ':q':
-            m = raw_input("Enter a message (':q' to quit'):")
+            print "Enter a message (':q' to quit'):\n::",
+            m = raw_input()
             mEnc = encrypt(m, cli_cipher)
             send(mEnc, conn)
+        logging.info("Leaving chat")
         self.chatLock.release()
 
     def receiver(self, msg):
