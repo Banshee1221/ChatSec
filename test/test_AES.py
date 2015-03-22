@@ -8,6 +8,7 @@ def test_padderEmpty():
 	p = padder(m)
 	assert padder(m) == m
 
+# padder
 def test_padderNormal():
 	m = '1`g wuctre'
 	p = padder(m)
@@ -18,6 +19,7 @@ def test_padderLong():
 	p = padder(m)
 	assert padder(m) == m+6*b'\x00'
 
+# encryption - messages
 def test_encryptionEmpty():
 	m = ''
 	e = encrypt(m, testKey)
@@ -30,8 +32,29 @@ def test_encryptionNormal():
 	d = decrypt(e, testKey)
 	assert d == m
 
-def test_encryptionLong():
+def test_encryptionOddChars():
 	m = '`~!@#$%^&*()-=_+\|[]{};":,./<>?1234567890'
 	e = encrypt(m, testKey)
 	d = decrypt(e, testKey)
 	assert d == m
+
+# encryption - files
+def checkFile(f):
+	e = encryptFile(f, testKey)
+	d = decryptFile(e, testKey)
+	fr = open(f, 'rb')
+	x = fr.read()
+	fr.close()
+	assert d == x
+
+def test_encryptFileEmpty():
+	f = 'test/files/empty_file.txt'
+	checkFile(f)
+
+def test_encryptFileSmall():
+	f = 'test/files/small_file.txt'
+	checkFile(f)
+
+def test_encryptFileBig():
+	f = 'test/files/big_file.txt'
+	checkFile(f)
