@@ -50,7 +50,7 @@ def receive(sock):
         logging.info("Error receiving message: %s", error)
         return False
     if rec:
-        logging.info("Received %s", rec)
+        logging.info("Received %s", str(rec).replace("\n", '').replace("\r", ''))
         msg = cPickle.loads(rec)
         logging.info("Loaded content: %s", msg)
         return msg
