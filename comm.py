@@ -57,7 +57,7 @@ def receive(sock):
     return False
 
 
-def send_one_message(sock, data):
+def send_var_message(sock, data):
     """
     Sends the length of the data to be sent, as well as the actual data.
     :return: None
@@ -67,7 +67,7 @@ def send_one_message(sock, data):
     sock.sendall(data)
 
 
-def recv_one_message(sock):
+def recv_var_message(sock):
     """
     Receives the length of the data to be sent from the server and passes it to recvall.
     :return: recvall
