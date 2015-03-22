@@ -6,6 +6,7 @@ import pickle
 import logging
 import sys
 from thread import *
+import threading
 from Crypto.Cipher import AES
 from AES import *
 
@@ -29,6 +30,10 @@ class Client():
     listenSock = '' # server socket for client listening to incoming client connections
     listenIP = ''
     listenPORT = ''
+    threads = []
+    chatFlag = False
+    clientConn = ''
+    clientAddr = ''
 
     def __init__(self, ID, key, IP, port, listenOnly=False):
         self.clientID = ID
@@ -47,14 +52,16 @@ class Client():
         print "Connecting to server with IP: " + str(self.IP) + ", PORT: " + str(self.port)
         self.cli_sock.connect((self.IP, self.port))
         print "Success! Connected to server"
-        
+
         # ensure that listenSock is set up before identify sends socket info to the server
-        self.setupListen() 
-        start_new_thread(self.listenToClients, ())
+        self.setupListen()
+        listT = threading.Thread(target=self.listenToClients).start()
+        self.threads.append(listT)
         print "Self-listening started"
         
         self.identify()
         self.menu()
+
         self.cli_sock.close()
 
     def identify(self):
@@ -71,24 +78,28 @@ class Client():
     def menu(self):
         choice = False
         while not choice:
-            print "Select one of:"
+            print "\nSelect one of the following clients to chat to:"
             for each in self.others:
-                print each
-            choice = str(raw_input(":: "))
-            if choice not in self.others:
-                print "That client is not connected."
-                choice = False
-            if choice == self.clientID:
-                print "You can't chat with yourself."
-                choice = False
-            dictRet = self.others[choice]
-            logging.info("Chosen %s", str(dictRet))
-            if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
-                print "Starting messaging"
-                # Enter messaging state here
+                if str(each) != str(self.clientID):
+                    print each
+            choice = str(raw_input(":: "))      # Temp, not sure how to stop input if client connects to this one
+            if self.chatFlag is True:
+                pass
             else:
-                print "Authentication failed."
-                choice = False
+                if choice not in self.others:
+                    print "That client is not connected."
+                    choice = False
+                if choice == self.clientID:
+                    print "You can't chat with yourself."
+                    choice = False
+                dictRet = self.others[choice]
+                logging.info("Chosen %s", str(dictRet))
+                if self.authCli(choice, dictRet['IP'], dictRet['PORT']):
+                    print "Starting messaging"
+                    threading.Thread(target=self.sender) # Trying to establish conn to send and receive messages here
+                else:
+                    print "Authentication failed."
+                    choice = False
 
     def authCli(self, cli_id, cli_ip, cli_port):
         # Send initial request to other client
@@ -177,12 +188,14 @@ class Client():
     def listenToClients(self):
         while True:
             conn, addr = self.listenSock.accept()
-            logging.info("Connected with %s", addr)
+            self.clientConn, self.ClientAddr = conn, addr
+            logging.info("Incoming connection with %s", addr)
             data = pickle.loads(conn.recv(1024)) # <- Slightly insecure, could be used to load random crap I think. Rather handle this in a separate receive method
             if not data:
                 break
             logging.info("Received data: %s", data)
             if data['type'] == 'new conn':
+                self.chatFlag = True
                 # Another client is requesting a new connection
                 nonce = random.randrange(1, 100000000) # <- need to store this and check it later on (see below)
                 self.sec_nonces[data['uid']] = nonce
@@ -200,7 +213,7 @@ class Client():
                 if self.sec_nonces[package['uid']] != package['nonce']:
                     logging.info("Server's nonce was not fresh")
                     continue
-                
+
                 # Send a confirmation nonce
                 cipher = AES.new(self.keyring[package['uid']])
                 nonce = random.randrange(1, 100000000)
@@ -215,6 +228,7 @@ class Client():
                     logging("Confirmation nonce incorrect! connection rejected")
                     continue
                 logging.info("Nonce confirmed. Starting messaging")
+                threading.Thread(target=self.receiver) # Start the listener that is supposed to return messages
                 # Enter messaging state here
             else:
                 logging.info("Message type not recognised")
@@ -223,13 +237,18 @@ class Client():
         conn.close()
     
     # TODO: Combine this with listenToClients
-    def chatListener(self):
-        logging.info('Listening for info')
-        conn, addr = self.listenSock.accept()
-        logging.info('Received connection: %s, address: %s', conn, addr)
+    # Trying to start these in new threads after the init
+    def sender(self):
+        conn, addr = self.clientConn, self.clientAddr
+        logging.info('Established to: %s, address: %s for sending', conn, addr)
         while True:
-            data = conn.recv(4096)
-            if not data:
-                break
+            toSend = str(raw_input())
+            conn.sendall(toSend)
         conn.close()
-        return data
+
+    def receiver(self):
+        conn, addr = self.clientConn, self.clientAddr
+        logging.info('Established to: %s, address: %s for listening', conn, addr)
+        while True:
+            print conn.recv(4096)
+        conn.close()
