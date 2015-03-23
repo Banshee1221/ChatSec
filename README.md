@@ -9,14 +9,19 @@ This is a networking project for the Network and Internetwork Security course at
 ## Requirements
 
 [PyCrypto](https://www.dlitz.net/software/pycrypto/)
+[pytest](http://pytest.org/latest/)
+
+## Use
+
+In order to use this demo, start the server script and then start the client scripts (cli[1-3].py). To enable logging of information 
+for the client scripts, change the line "logging.basicConfig(stream=sys.stderr, level=logging.CRITICAL)" to 
+"logging.basicConfig(stream=sys.stderr, level=logging.INFO)" in the client.py file.
+
+Once two or more clients are connected, select the ID of the other client from one and commence chatting.
 
 ## Links
 
 [sockets](https://docs.python.org/2/howto/sockets.html)
-
-[unittest](https://docs.python.org/2/library/unittest.html)
-
-[pytest](http://pytest.org/latest/)
 
 ## License
 

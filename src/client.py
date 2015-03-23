@@ -1,13 +1,11 @@
-__author__ = 'Eugene'
-
 import socket
 import random
 import logging
 import sys
 import time
 from thread import *
-import threading
-from Crypto.Cipher import AES
+#import threading
+#from Crypto.Cipher import AES
 from AES import *
 from comm import *
 
