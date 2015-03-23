@@ -104,12 +104,12 @@ class Client():
                 choice = False
                 time.sleep(1)
                 continue
-            if choice not in self.others:
-                print "That client is not connected."
-                choice = False
-                continue
             if choice == self.ID:
                 print "You can't chat with yourself."
+                choice = False
+                continue
+            if choice not in self.others:
+                print "That client is not connected."
                 choice = False
                 continue
             address = self.others[choice]
