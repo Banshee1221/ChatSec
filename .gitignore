@@ -60,3 +60,6 @@ target/
 
 # PyTest
 pytest.ini
+
+# Output files from chatting
+out/
