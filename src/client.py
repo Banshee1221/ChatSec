@@ -12,7 +12,7 @@ from AES import *
 from comm import *
 
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logging.basicConfig(stream=sys.stderr, level=logging.CRITICAL)
 
 class Client():
     ID = 0
@@ -32,7 +32,8 @@ class Client():
     listenIP = ''
     listenPORT = ''
 
-    chatLock = allocate_lock()
+    clientLock = allocate_lock()
+    inputLock = allocate_lock()
     chatUID = ''
 
     def __init__(self, ID, key, server_ip, server_port):
@@ -52,7 +53,7 @@ class Client():
         self.listenSock = setup['sock']
         self.listenIP, self.listenPORT = setup['address']
         start_new_thread(self.listenToClients, ())
-        print "Self-listening started"
+        logging.info("Self-listening started")
         
         try:
             self.identify()
@@ -83,17 +84,20 @@ class Client():
             exit()
         choice = False
         while not choice:
-            if self.chatLock.locked():
+            if self.inputLock.locked():
                 logging.debug("LOCK1 FOUND")
                 time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
             for each in self.others:
                 print each
+            self.inputLock.acquire()
             choice = str(raw_input(":: "))
-            if self.chatLock.locked():
-                logging.debug("LOCK2 FOUND")
+            self.inputLock.release()
+            
+            if self.clientLock.locked():
                 choice = False
+                time.sleep(1)
                 continue
             if choice not in self.others:
                 print "That client is not connected."
@@ -203,7 +207,7 @@ class Client():
             logging.info("Incoming connection with %s", addr)
             data = receive(conn) # TODO: check receive for security
 
-            if self.chatLock.locked():
+            if self.clientLock.locked():
                 while True:
                     # break out of message if other side closes
                     if not data:
@@ -216,10 +220,13 @@ class Client():
                     
                     logging.info("Received chat message: %s", data)
                     msg = decrypt(data['data'], self.keyring[self.chatUID])
-                    print ">>", msg
+                    print "\n>> "+msg
+                    print "Enter a message (':q' to quit'):"
+                    print ":: ",
+                    sys.stdout.flush()
                     data = receive(conn)
-                if self.chatLock.locked():
-                    self.chatLock.release()
+                if self.clientLock.locked():
+                    self.clientLock.release()
                 continue
 
             if not data:
@@ -263,17 +270,18 @@ class Client():
                 logging.info("Nonce confirmed. Starting messaging")
                 # threading.Thread(target=self.receiver) # Start the listener that is supposed to return messages
                 self.chatUID = data['uid']
+                print "\nConnection made with client", data['uid']
                 # Enter messaging state here
-                print "Connected to client", data['uid'], " Press <ENTER> to continue"
-                start_new_thread(self.chat, ())
+                start_new_thread(self.chat, (True,))
 
             elif data['type'] == 'clients':
                 logging.info("Received new connection list from server")
                 self.others = decrypt(data['data'], self.sharedKey)
-                print "\nConnected clients updated:"
+                print "\n***Connected clients updated:***"
                 for each in self.others:
                     print each
                 print "Select a new client:\n:: ",
+                sys.stdout.flush()
 
             else:
                 logging.info("Message type not recognised")
@@ -282,24 +290,30 @@ class Client():
         conn.close()
 
     # TODO: use this for the messaging state
-    def chat(self):
+    def chat(self, new_conn=False):
         """ Used to send messages to the other client
         :return: True if the user indicates that they want to exit,
                  False if they want to chat to someone else"""
+        if new_conn:
+            print "***Press <ENTER> to start chatting (100s timeout)***"
         # Stop the listener thread from processing anything else
         logging.info("Acquiring chat lock")
-        self.chatLock.acquire()
+        self.clientLock.acquire()
+        in_lock = self.inputLock.acquire(100)
+        if not in_lock:
+            print "Timeout elapsed. No connection made."
+            return
+
         conn = connect(self.others[self.chatUID])
         if not conn:
             logging.info("Error connecting to other client for chat!")
             return False
 
-        m = ''
         logging.info("Entering messaging loop")
+        print "Enter a message (':q' to quit'):\n::",
+        m = raw_input()
         while m != ':q':
-            print "Enter a message (':q' to quit'):\n::",
-            m = raw_input()
-            if not self.chatLock.locked():
+            if not self.inputLock.locked():
                 print "Other client disconnected."
                 break
             mEnc = encrypt(m, self.keyring[self.chatUID])
@@ -307,6 +321,10 @@ class Client():
                       'data': mEnc}
             send(toSend, conn)
             logging.info("Message sent to other client")
+            print "Enter a message (':q' to quit'):\n::",
+            m = raw_input()
         logging.info("Leaving chat")
-        if self.chatLock.locked():
-            self.chatLock.release()
+        if self.inputLock.locked():
+            self.inputLock.release()
+        if self.clientLock.locked():
+            self.clientLock.release()

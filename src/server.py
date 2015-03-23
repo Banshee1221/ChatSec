@@ -111,6 +111,7 @@ def clientthread(conn, addr):
                 if uid == initAuth['uid']:
                     del CLIENTS[uid]
                     logging.info("Disconnected client with uid %s", uid)
+                    broadcast(CLIENTS, uid)
             
             else:
                 logging.info('Invalid message received: %s', initAuth)
