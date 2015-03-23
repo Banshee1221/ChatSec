@@ -87,10 +87,16 @@ class Client():
                 time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
-            for each in self.others:
-                print each
+            del self.others[self.ID]
+            if len(self.others) == 0:
+                print "There are no other clients connected."
+            else:
+                for each in self.others:
+                    print each
             self.inputLock.acquire()
-            choice = str(raw_input(":: "))
+            choice = str(raw_input(":: (':q' to exit)\n"))
+            if choice == ":q":
+                exit()
             self.inputLock.release()
             
             if self.clientLock.locked():
