@@ -222,35 +222,36 @@ class Client():
             logging.info("Incoming connection with %s", addr)
             data = receive(conn) # TODO: check receive for security
 
-            if self.clientLock.locked():
-                while True:
-                    # break out of message if other side closes
-                    if not data:
-                        break
-                    # throw away irrelevant messages
-                    if data['type'] != 'msg' and data['type'] != 'file':
-                        logging.info("Chat already in progress, not listening to new clients")
-                        # TODO: add reply to third party: busy
-                        break
-                    
-                    if data['type'] == 'msg':
-                        # receive message
-                        logging.info("Received chat message: %s", data)
-                        msg = decrypt(data['data'], self.keyring[self.chatUID])
-                        print "\n>> "+msg
-                    elif data['type'] == 'file':
-                        # receive file
-                        content = recv_var_message(conn)
-                        decr = decryptFile(content, self.keyring[self.chatUID])
-                        print "\nSaved file", decr['filename']
-                    
-                    print "Enter a message (':q' to quit', ':f <filename>' to send a file):"
-                    print ":: ",
-                    sys.stdout.flush()
-                    data = receive(conn)
-                if self.clientLock.locked():
+            while self.clientLock.locked():
+                # break out of message if other side closes
+                if not data:
+                    print "\n***Other client disconnected. Press <ENTER> to continue***"
                     self.clientLock.release()
-                continue
+                    break
+                # throw away irrelevant messages
+                if data['type'] != 'msg' and data['type'] != 'file':
+                    logging.info("Chat already in progress, not listening to new clients")
+                    # TODO: add reply to third party: busy
+                    break
+                
+                if data['type'] == 'msg':
+                    # receive message
+                    logging.info("Received chat message: %s", data)
+                    msg = decrypt(data['data'], self.keyring[self.chatUID])
+                    print "\n>> "+msg
+                elif data['type'] == 'file':
+                    # receive file
+                    content = recv_var_message(conn)
+                    decr = decryptFile(content, self.keyring[self.chatUID])
+                    print "\nSaved file", decr['filename']
+                
+                print "Enter a message (':q' to quit', ':f <filename>' to send a file):"
+                print ":: ",
+                sys.stdout.flush()
+                data = receive(conn)
+            # if self.clientLock.locked():
+            #     self.clientLock.release()
+            #     continue
 
             if not data:
                 continue
@@ -329,10 +330,10 @@ class Client():
         logging.info("Acquiring chat lock")
         self.clientLock.acquire()
         in_lock = self.inputLock.acquire()
-        if not in_lock:
-            print "Timeout elapsed. No connection made."
-            self.leaveChat()
-            return
+        # if not in_lock:
+        #     print "Timeout elapsed. No connection made."
+        #     self.leaveChat()
+        #     return
 
         conn = connect(self.others[self.chatUID])
         if not conn:
@@ -343,7 +344,7 @@ class Client():
         logging.info("Entering messaging loop")
         print "Enter a message (':q' to quit', ':f <filename>' to send a file):\n::",
         m = raw_input()
-        while m != ':q':
+        while m != ':q' and self.clientLock.locked():
             # if not self.clientLock.locked():
             #     print "Other client disconnected."
             #     break
@@ -362,10 +363,12 @@ class Client():
                 logging.info("Message sent to other client")
             print "Enter a message (':q' to quit', ':f <filename>' to send a file):\n::",
             m = raw_input()
-        logging.info("Leaving chat")
-        self.leaveChat()
+        print "Leaving chat"
+        self.leaveChat(conn)
 
-    def leaveChat(self):
+    def leaveChat(self, conn=False):
+        if conn:
+            conn.close()
         if self.inputLock.locked():
             self.inputLock.release()
         if self.clientLock.locked():
