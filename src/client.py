@@ -87,19 +87,17 @@ class Client():
                 time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
-            try:
+            if self.ID in self.others:
                 del self.others[self.ID]
-            except KeyError:
-                pass
             if len(self.others) == 0:
                 print "There are no other clients connected."
             else:
                 for each in self.others:
                     print each
             self.inputLock.acquire()
-            choice = str(raw_input(":: (':q' to exit)\n"))
+            choice = str(raw_input("(':q' to exit)\n:: "))
             if choice == ":q":
-                exit()
+                raise KeyboardInterrupt
             self.inputLock.release()
             
             if self.clientLock.locked():
@@ -293,10 +291,8 @@ class Client():
                 logging.info("Received new connection list from server")
                 self.others = decrypt(data['data'], self.sharedKey)
                 print "\n***Connected clients updated:***"
-                try:
+                if self.ID in self.others:
                     del self.others[self.ID]
-                except KeyError:
-                    pass
                 if len(self.others) == 0:
                     print "There are no other clients connected."
                 else:
