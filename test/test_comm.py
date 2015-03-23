@@ -42,7 +42,7 @@ def test_connectConnectionError():
 def check_message_sent(msg):
     s = setupListen()
     soc = connect(s['addr'])
-    assert True == send(msg, soc)
+    assert send(msg, soc)
 
     s['socket'].close()
 
@@ -86,7 +86,7 @@ def test_sendError():
     s = setupListen()
     soc = connect(s['addr'])
     s['socket'].close()
-    assert send('a sample message', soc) == False
+    assert not send('a sample message', soc)
 
 
 # receive
@@ -143,17 +143,28 @@ def test_receiveError():
 
     conn, addr = s['socket'].accept()
     conn.close()
-    assert receive(conn) == False
+    assert not receive(conn)
 
 
 # variable-length messages
 def test_sendVarMessage():
     s = setupListen()
-    data = open('5mb.jpg', 'rb')
-    toSend = data.readlines()
-    send_var_message(s['socket'], toSend)
+    soc = connect(s['addr'])
+    f = open('test/files/small_file.txt', 'rb')
+    toSend = f.read()
+    f.close()
+    assert send_var_message(toSend, soc)
 
 
 def test_recVarMessage():
     s = setupListen()
-    recv_var_message(s['socket'])
+    soc = connect(s['addr'])
+    f = open('test/files/small_file.txt', 'rb')
+    toSend = f.read()
+    f.close()
+    send_var_message(toSend, soc)
+
+    conn, addr = s['socket'].accept()
+    recv = recv_var_message(conn)
+    assert toSend == recv
+    assert type(toSend) == type(recv)

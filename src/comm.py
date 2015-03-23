@@ -57,14 +57,16 @@ def receive(sock):
     return False
 
 
-def send_var_message(sock, data):
+# Taken from http://stupidpythonideas.blogspot.com/2013/05/sockets-are-byte-streams-not-message.html
+def send_var_message(data, sock):
     """
     Sends the length of the data to be sent, as well as the actual data.
     :return: None
     """
     datalen = len(data)
     sock.sendall(struct.pack('!I', datalen))
-    sock.sendall(data)
+    ret = sock.sendall(data)
+    return not ret
 
 
 def recv_var_message(sock):
@@ -79,8 +81,8 @@ def recv_var_message(sock):
 
 def recvall(sock, count):
     """
-    Reads the data part by part and reconstructs it.
-    :return: None or the content of the data
+    Reads 'count' bytes from sock
+    :return: None or the content of the data as a binary string
     """
     buff = b''
     while count:
