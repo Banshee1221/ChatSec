@@ -3,7 +3,6 @@ import sys
 from thread import *
 import logging
 import os
-#from Crypto.Cipher import AES
 from AES import *
 from comm import *
 

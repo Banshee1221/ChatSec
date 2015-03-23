@@ -4,8 +4,6 @@ import logging
 import sys
 import time
 from thread import *
-#import threading
-#from Crypto.Cipher import AES
 from AES import *
 from comm import *
 
@@ -44,6 +42,9 @@ class Client():
         # Binding own port and connecting to server
         print "Connecting to server with IP: " + str(self.server_ip) + ", PORT: " + str(self.server_port)
         self.cli_sock = connect((self.server_ip, self.server_port))
+        if not self.cli_sock:
+            print "Server not available. Exiting..."
+            exit()
         print "Success! Connected to server"
 
         # ensure that listenSock is set up before identify sends socket info to the server
@@ -126,6 +127,9 @@ class Client():
         init = {'type': 'new conn',
                 'uid': self.ID}
         tmp_sock = connect((cli_ip, cli_port))
+        if not tmp_sock:
+            print "Client disconnected"
+            return False
         logging.info("Connected to client %s", cli_id)
         send(init, tmp_sock)
         logging.info("Sent ID to the target client")
@@ -142,6 +146,9 @@ class Client():
                   'package': package}
         # Currently reconnecting manually, this should be done through a connect function
         tmp_sock = connect((cli_ip, cli_port))
+        if not tmp_sock:
+            print "Client disconnected"
+            return False
         logging.info("Connected to client %s", cli_id)
         send(toSend, tmp_sock)
         logging.info("Sent session key to client %s at %s", cli_id, (cli_ip, cli_port))
@@ -158,6 +165,9 @@ class Client():
                 'uid': self.ID,
                 'nonce': nonce_conf}
         tmp_sock = connect((cli_ip, cli_port))
+        if not tmp_sock:
+            print "Client disconnected"
+            return False
         logging.info("Connected to client %s", cli_id)
         send(conf, tmp_sock)
         tmp_sock.close()
@@ -298,7 +308,8 @@ class Client():
                 else:
                     for each in self.others:
                         print each
-                print "Select a new client:\n:: ",
+                print "Select a new client:"
+                print "(':q' to exit)\n:: ",
                 sys.stdout.flush()
 
             else:
@@ -313,18 +324,20 @@ class Client():
         :return: True if the user indicates that they want to exit,
                  False if they want to chat to someone else"""
         if new_conn:
-            print "***Press <ENTER> to start chatting (100s timeout)***"
+            print "***Press <ENTER> to start chatting***"
         # Stop the listener thread from processing anything else
         logging.info("Acquiring chat lock")
         self.clientLock.acquire()
-        in_lock = self.inputLock.acquire(100)
+        in_lock = self.inputLock.acquire()
         if not in_lock:
             print "Timeout elapsed. No connection made."
+            self.leaveChat()
             return
 
         conn = connect(self.others[self.chatUID])
         if not conn:
-            logging.info("Error connecting to other client for chat!")
+            print "Error connecting to other client for chat!"
+            self.leaveChat()
             return False
 
         logging.info("Entering messaging loop")
@@ -350,6 +363,9 @@ class Client():
             print "Enter a message (':q' to quit', ':f <filename>' to send a file):\n::",
             m = raw_input()
         logging.info("Leaving chat")
+        self.leaveChat()
+
+    def leaveChat(self):
         if self.inputLock.locked():
             self.inputLock.release()
         if self.clientLock.locked():
