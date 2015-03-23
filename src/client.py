@@ -87,7 +87,10 @@ class Client():
                 time.sleep(1)
                 continue
             print "\nSelect one of the following clients to chat to:"
-            del self.others[self.ID]
+            try:
+                del self.others[self.ID]
+            except KeyError:
+                pass
             if len(self.others) == 0:
                 print "There are no other clients connected."
             else:
@@ -290,8 +293,15 @@ class Client():
                 logging.info("Received new connection list from server")
                 self.others = decrypt(data['data'], self.sharedKey)
                 print "\n***Connected clients updated:***"
-                for each in self.others:
-                    print each
+                try:
+                    del self.others[self.ID]
+                except KeyError:
+                    pass
+                if len(self.others) == 0:
+                    print "There are no other clients connected."
+                else:
+                    for each in self.others:
+                        print each
                 print "Select a new client:\n:: ",
                 sys.stdout.flush()
 
