@@ -64,11 +64,11 @@ def decryptFile(ciphertext, key):
     Decrypts a string with a given key. Writes the plaintext to the out/ folder
     :param ciphertext: Ciphertext to be decrypted
     :param key: Key used to decrypt the file
-    :return: Decrypted file as a string
+    :return: Decrypted file as a dict
     """
     payload = decrypt(ciphertext, key)
     fw = open('out/'+payload['filename'][payload['filename'].rfind('/')+1:],
               'wb')
     fw.write(payload['data'])
     fw.close()
-    return payload['data']
+    return payload

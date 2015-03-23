@@ -63,9 +63,10 @@ def send_var_message(data, sock):
     Sends the length of the data to be sent, as well as the actual data.
     :return: None
     """
-    datalen = len(data)
+    pickle = cPickle.dumps(data)
+    datalen = len(pickle)
     sock.sendall(struct.pack('!I', datalen))
-    ret = sock.sendall(data)
+    ret = sock.sendall(pickle)
     return not ret
 
 
@@ -76,7 +77,7 @@ def recv_var_message(sock):
     """
     bufferlen = recvall(sock, 4)
     datalen, = struct.unpack('!I', bufferlen)
-    return recvall(sock, datalen)
+    return cPickle.loads(recvall(sock, datalen))
 
 
 def recvall(sock, count):

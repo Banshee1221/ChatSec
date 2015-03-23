@@ -218,10 +218,18 @@ class Client():
                         # TODO: add reply to third party: busy
                         break
                     
-                    logging.info("Received chat message: %s", data)
-                    msg = decrypt(data['data'], self.keyring[self.chatUID])
-                    print "\n>> "+msg
-                    print "Enter a message (':q' to quit'):"
+                    if data['type'] == 'msg':
+                        # receive message
+                        logging.info("Received chat message: %s", data)
+                        msg = decrypt(data['data'], self.keyring[self.chatUID])
+                        print "\n>> "+msg
+                    elif data['type'] == 'file':
+                        # receive file
+                        content = recv_var_message(conn)
+                        decr = decryptFile(content, self.keyring[self.chatUID])
+                        print "\nSaved file", decr['filename']
+                    
+                    print "Enter a message (':q' to quit', ':f <filename>' to send a file):"
                     print ":: ",
                     sys.stdout.flush()
                     data = receive(conn)
@@ -310,18 +318,26 @@ class Client():
             return False
 
         logging.info("Entering messaging loop")
-        print "Enter a message (':q' to quit'):\n::",
+        print "Enter a message (':q' to quit', ':f <filename>' to send a file):\n::",
         m = raw_input()
         while m != ':q':
-            if not self.inputLock.locked():
-                print "Other client disconnected."
-                break
-            mEnc = encrypt(m, self.keyring[self.chatUID])
-            toSend = {'type': 'msg',
-                      'data': mEnc}
-            send(toSend, conn)
-            logging.info("Message sent to other client")
-            print "Enter a message (':q' to quit'):\n::",
+            # if not self.clientLock.locked():
+            #     print "Other client disconnected."
+            #     break
+            if m[0:2] == ':f':
+                # send file
+                toSend = {'type': 'file'}
+                send(toSend, conn)
+                fEnc = encryptFile(m[3:], self.keyring[self.chatUID])
+                send_var_message(fEnc, conn)
+                logging.info("File sent to other client")
+            else:
+                mEnc = encrypt(m, self.keyring[self.chatUID])
+                toSend = {'type': 'msg',
+                          'data': mEnc}
+                send(toSend, conn)
+                logging.info("Message sent to other client")
+            print "Enter a message (':q' to quit', ':f <filename>' to send a file):\n::",
             m = raw_input()
         logging.info("Leaving chat")
         if self.inputLock.locked():

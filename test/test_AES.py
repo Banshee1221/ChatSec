@@ -49,7 +49,8 @@ def checkFile(f):
 	fr = open(f, 'rb')
 	x = fr.read()
 	fr.close()
-	assert d == x
+	assert d['data'] == x
+	assert d['filename'] == f
 
 def test_encryptFileEmpty():
 	f = 'test/files/empty_file.txt'
