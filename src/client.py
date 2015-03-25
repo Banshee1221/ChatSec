@@ -3,12 +3,13 @@ import random
 import logging
 import sys
 import time
+import signal
 from thread import *
 from AES import *
 from comm import *
 
 
-logging.basicConfig(stream=sys.stderr, level=logging.CRITICAL)
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 class Client():
     ID = 0
@@ -37,6 +38,8 @@ class Client():
         self.sharedKey = key
         self.server_ip = server_ip
         self.server_port = server_port
+        for sig in [signal.SIGTERM, signal.SIGINT]:
+            signal.signal(sig, self.handler)
         
     def run(self):
         # Binding own port and connecting to server
@@ -373,3 +376,9 @@ class Client():
             self.inputLock.release()
         if self.clientLock.locked():
             self.clientLock.release()
+
+    def handler(self, signum = None, frame = None):
+        print 'Signal handler called with signal', signum
+        time.sleep(1)  #here check if process is done
+        print 'Wait done'
+        sys.exit(0)

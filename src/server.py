@@ -40,9 +40,13 @@ def clientthread(conn, addr):
             data = receive(conn)
         except socket.error:
             logging.info("Client at %s disconnected with socket error.", addr)
+            print CLIENTS
+            print addr
             conn.close()
         if not data:
             logging.info("Client at %s closed.", addr)
+            print CLIENTS
+            print addr
             break
 
         logging.info("Received: %s", data)
