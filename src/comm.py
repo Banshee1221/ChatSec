@@ -30,9 +30,10 @@ def send(msg, sock):
     :return: True if all data was sent, False otherwise"""
     toSend = cPickle.dumps(msg)  # TODO: add compression
     try:
+        logging.info("Comm received %s data", str(toSend).replace("\n", "").replace("\r", ""))
         ret = sock.sendall(toSend)  # Returns None ~ False when successful
     except:
-        error = sys.exc_info()[0]
+        error = sys.exc_info()
         logging.info("Error sending message: %s", error)
         ret = True
     return not ret

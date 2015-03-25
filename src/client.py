@@ -7,6 +7,7 @@ import signal
 from thread import *
 from AES import *
 from comm import *
+import threading
 
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -59,7 +60,8 @@ class Client():
         
         try:
             self.identify()
-            self.menu()
+            for i in range(1):
+                threading.Thread(target=self.menu).start()
         except KeyboardInterrupt:
             logging.info("User exiting. Sending notification to server")
             uidEnc = encrypt(self.ID, self.sharedKey)
@@ -142,6 +144,7 @@ class Client():
 
         # Pass on package to the server, then send reply (with session key)
         # to the other client
+        logging.info("Sending client ID: %s and encrypted message to be authed", cli_id)
         package = self.authSrv(cli_id, enc)
         if not package:
             return False
@@ -188,6 +191,7 @@ class Client():
                   'otheruid': who,
                   'nonce': nonce,
                   'enc': encData}
+        logging.info("Calling send function on packet (%s) for user socket (%s)", packet, self.cli_sock)
         send(packet, self.cli_sock)
         logging.info("Sent request to server")
 
